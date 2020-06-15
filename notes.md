@@ -1,12 +1,26 @@
 # MAGiC Notes
-## Summer 2020 - Breakthrough Listen Internship
+
+Summer 2020 - Breakthrough Listen Internship
+
+  
 
 ## Goals
+
 Accomplished:
-> Created basic Makefile
-> Basic IO working with fopen and open
+
+ 1. Created basic Makefile
+ 2. Basic IO working with fopen and open
+
+  
 
 TODO:
-> Time different read methods
 
-## Problems
+ 1. Time different read methods
+ 2. Test transfer speeds to GPU
+
+  
+
+## Potential Problems
+
+ 1. CPU -> GPU data transfer speeds
+ 2. GUPPI header variability  - Dave M?
