@@ -30,6 +30,7 @@ typedef struct {
   size_t hdr_size; // Size of header in bytes including DIRECTIO padding
 } raw_hdr_t;
 
+
 int parse_raw_header(char * hdr, size_t len, raw_hdr_t * raw_hdr);
 void parse_use_open(char * fname);
 
@@ -81,7 +82,7 @@ void parse_use_open(char * fname){
     raw_hdr_t raw_hdr;
     char buffer[MAX_RAW_HDR_SIZE];
     off_t pos;
-    char * bloc_data;
+    
     long PAGESIZE = sysconf(_SC_PAGESIZE);
 
     printf("Pagesize: %ld\n", PAGESIZE);
@@ -102,14 +103,24 @@ void parse_use_open(char * fname){
     printf("Now at pos: %ld\n", pos);
 
     // Need padding to create an mmap offset size of a multiple system's page size
-    int mmap_pad = PAGESIZE - raw_hdr.hdr_size % PAGESIZE;
+    int mmap_pad = raw_hdr.hdr_size % PAGESIZE;
     printf("mmap pad: %i\n", mmap_pad);
 
-    bloc_data = mmap(NULL, raw_hdr.blocsize + mmap_pad, PROT_READ, MAP_SHARED, fd, raw_hdr.hdr_size + mmap_pad);
+    //(int)raw_hdr.hdr_size + mmap_pad
+
+    int *bloc_data = (int *) mmap(NULL, (int)raw_hdr.blocsize + mmap_pad, PROT_READ, MAP_SHARED, fd, (off_t)raw_hdr.hdr_size - mmap_pad);
     
-    printf("Bloc data: %s\n", bloc_data);
+    // Print out complex polarization values
+    for(int i =mmap_pad; i< mmap_pad + 220; i += 4){
+      printf("I: %i\n", i);
+      printf("(%d, %d), (%d, %d)\n\n", bloc_data[i], bloc_data[i+1], bloc_data[i+2], bloc_data[i+3]);
+      
+    }
+    
 
     close(fd);
+
+    //fwrite(&bloc_data, 1, raw_hdr.hdr_size + mmap_pad, stdout);
 
 };
 

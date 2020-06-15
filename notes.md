@@ -22,5 +22,5 @@ TODO:
 
 ## Potential Problems
 
- 1. CPU -> GPU data transfer speeds
+ 1. CPU <-> GPU data transfer speeds
  2. GUPPI header variability  - Dave M?
