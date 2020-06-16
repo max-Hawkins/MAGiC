@@ -17,6 +17,7 @@ Accomplished:
 TODO:
 
  - Time different read methods
+ - Create CUDA-enabled Makefile
  - Test cudaMalloc vs cudaHostAlloc speeds - pinned vs non-pinned
  - Create simple GPU accelerated energy detection algorithm
  - Test synchronous GPU memory exchange and processing
