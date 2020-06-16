@@ -7,14 +7,22 @@
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include </usr/local/cuda/include/cuda.h>
+#include </usr/local/cuda/include/cuda_runtime.h>
 
 // TODO: Check to see if this large of size is needed
 #define MAX_RAW_HDR_SIZE (25600)
+#define MAX_CHUNKSIZE (5368709120) // 5GB - set so that too much memory isn't pinned
+#define BYTES_PER_GB (1000000000)
 
 typedef __int32_t int32_t;
 
-
 typedef struct {
+  char * filename;
+  size_t filesize;
+  unsigned int nblocks;
+  long int chunksize;
+  unsigned int nchunks;
   int directio; // whether or not DIRECTIO flag was size
   size_t blocsize;
   unsigned int npol;
@@ -27,32 +35,49 @@ typedef struct {
   //char src_name[81];
   //char telescop[81];
   off_t hdr_pos; // Offset of start of header
-  size_t hdr_size; // Size of header in bytes including DIRECTIO padding
-} raw_hdr_t;
+  size_t hdr_size; // Size of header in bytes including DIRECTIO padding if applicable
+} raw_file_t;
 
 
-int parse_raw_header(char * hdr, size_t len, raw_hdr_t * raw_hdr);
+int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
+void process_cuda(int8_t *data, raw_file_t *raw_file);
 void parse_use_open(char * fname);
+void parse_use_fopen(char *fname);
+void calc_chunksize(raw_file_t *raw_file);
 
 
 int main(int argc, char *argv[]){
 
+    //parse_use_fopen(argv[1]);
+
+    parse_use_open(argv[1]);
+    
+    return 0;
+};
+
+void process_cuda(int8_t *data, raw_file_t *raw_file){
+    int8_t *d_data;
+    printf("CudaMalloc size: %0.3f GBs\n", (float) raw_file->chunksize / BYTES_PER_GB);
+
+    cudaMalloc((void *) &d_data, raw_file->chunksize);
+    //cudaHostAlloc((void *) data, raw_file->chunksize, cudaHostAllocDefault);
+    cudaMemcpy(d_data, data, raw_file->chunksize, cudaMemcpyHostToDevice);
+}
+
+void parse_use_fopen(char *fname){
     FILE* fp;
     char buffer[MAX_RAW_HDR_SIZE];
-    raw_hdr_t raw_hdr;
+    raw_file_t raw_file;
     int i=0;
     
 
-    if(!argv[1]){
-      printf("Please enter a GUPPI RAW file to parse./n");
-      return 0;
+    if(!fname){
+      printf("Please enter a GUPPI RAW file to parse.\n");
+      return;
     }
 
-    printf("Opening File: %s\n", argv[1]);
-
-    
-    
-    fp = fopen(argv[1],"rb");         
+    printf("Opening File: %s\n", fname);    
+    fp = fopen(fname,"rb");         
 
     if(fp == NULL){
         printf("Error opening file");
@@ -60,7 +85,7 @@ int main(int argc, char *argv[]){
 
     fread(&buffer,sizeof(buffer),1,fp);
 
-    // int hdr_size = parse_raw_header(buffer, MAX_RAW_HDR_SIZE, &raw_hdr);
+    int hdr_size = parse_raw_header(buffer, MAX_RAW_HDR_SIZE, &raw_file);
 
     // if(!hdr_size){
     //     printf("Error parsing header. Couldn't find END record.");
@@ -71,56 +96,61 @@ int main(int argc, char *argv[]){
 
     printf("\n");
     fclose(fp);
-
-    parse_use_open(argv[1]);
-    
-
-};
+}
 
 void parse_use_open(char * fname){
     int fd;
-    raw_hdr_t raw_hdr;
+    raw_file_t raw_file;
     char buffer[MAX_RAW_HDR_SIZE];
     off_t pos;
-    
+    // Get page size for reading later
     long PAGESIZE = sysconf(_SC_PAGESIZE);
-
     printf("Pagesize: %ld\n", PAGESIZE);
 
+    raw_file.filename = fname;
     fd = open(fname, O_RDONLY);
     if(fd == -1) {
         printf("Couldn't open file %s", fname);
         return;
-    }
+    }    
+    // Read in header data and parse it
+    raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
+    raw_file.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_file);
 
-    
-
-    raw_hdr.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
-
-    raw_hdr.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_hdr);
-
-    pos = lseek(fd, raw_hdr.hdr_size, SEEK_SET);
+    pos = lseek(fd, raw_file.hdr_size, SEEK_SET);
     printf("Now at pos: %ld\n", pos);
 
     // Need padding to create an mmap offset size of a multiple system's page size
-    int mmap_pad = raw_hdr.hdr_size % PAGESIZE;
-    printf("mmap pad: %i\n", mmap_pad);
+    //int mmap_pad = raw_file.hdr_size % PAGESIZE;
+    //printf("mmap pad: %i\n", mmap_pad);
 
-    //(int)raw_hdr.hdr_size + mmap_pad
+    raw_file.filesize = lseek(fd, 0, SEEK_END);
+    printf("file size: %ld", raw_file.filesize);
 
-    int *bloc_data = (int *) mmap(NULL, (int)raw_hdr.blocsize + mmap_pad, PROT_READ, MAP_SHARED, fd, (off_t)raw_hdr.hdr_size - mmap_pad);
-    
+    calc_chunksize(&raw_file);
+
+    if(!raw_file.chunksize){
+      printf("Error calculating chunksize for given raw_file.");
+      return;
+    }
+    printf("Chunksize: %ld", raw_file.chunksize);
+
+    int8_t *bloc_data = (int8_t *) mmap(NULL, raw_file.chunksize, PROT_READ, MAP_SHARED, fd, 0);
+
     // Print out complex polarization values
-    for(int i =mmap_pad; i< mmap_pad + 220; i += 4){
+    for(int i =raw_file.hdr_size - 4; i< raw_file.hdr_size + 16; i += 4){
       printf("I: %i\n", i);
       printf("(%d, %d), (%d, %d)\n\n", bloc_data[i], bloc_data[i+1], bloc_data[i+2], bloc_data[i+3]);
       
     }
+    printf("Size of bloc_data: %ld\n", raw_file.chunksize );
+
+    process_cuda(bloc_data, &raw_file);
     
 
     close(fd);
 
-    //fwrite(&bloc_data, 1, raw_hdr.hdr_size + mmap_pad, stdout);
+    //fwrite(&bloc_data, 1, raw_file.hdr_size + mmap_pad, stdout);
 
 };
 
@@ -128,7 +158,7 @@ void parse_use_open(char * fname){
 // Mainly copied from rawspec_rawutils.c in rawspec
 // NOTE: Using hget like in rawspec seems like it might be inefficient.
 //       This does too. Need to benchmark this against it. 
-int parse_raw_header(char * hdr, size_t len, raw_hdr_t * raw_hdr)
+int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
 {
   size_t i;
   char * endptr;
@@ -148,7 +178,6 @@ int parse_raw_header(char * hdr, size_t len, raw_hdr_t * raw_hdr)
     else if(!strncmp(hdr+i, "END ", 4)) {
       // Move to just after END record
       i += 80;
-      // TODO: Have this explained and where the value for MAX_RAW_HDR_SIZE came from
       // Account for DirectIO
       if(raw_hdr->directio) {
         i += (MAX_RAW_HDR_SIZE - i) % 512;
@@ -156,7 +185,6 @@ int parse_raw_header(char * hdr, size_t len, raw_hdr_t * raw_hdr)
       printf("hdr_size: found END at record %ld\n", i);
       return i;
     }
-    
     else if (!strncmp(hdr+i, "BLOCSIZE", 8)){
         raw_hdr->blocsize = strtoul(hdr+i+9, &endptr, 10);
         printf("BLOCSIZE: %ld\n", raw_hdr->blocsize);
@@ -166,4 +194,21 @@ int parse_raw_header(char * hdr, size_t len, raw_hdr_t * raw_hdr)
   return 0;
 }
 
+// Calculates the number of data chunks to pass to the GPU
+// Dependent on the MAX_CHUNKSIZE
+void calc_chunksize(raw_file_t *raw_file){
+    //TODO: Create good chunksize algorithm
+    size_t chunksize = raw_file->filesize;
+
+    for(int chunks = 1; chunks < 128; chunks *= 2){
+      chunksize = raw_file->filesize / chunks;
+      printf("Chunksize in function: %ld\n", chunksize);
+
+      if(chunksize < MAX_CHUNKSIZE){
+          raw_file->chunksize = chunksize;
+          raw_file->nchunks = chunks;
+          return;
+      }
+    }
+}
 
