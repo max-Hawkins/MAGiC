@@ -15,8 +15,6 @@
 #define MAX_CHUNKSIZE (5368709120) // 5GB - set so that too much memory isn't pinned
 #define BYTES_PER_GB (1000000000)
 
-typedef __int32_t int32_t;
-
 typedef struct {
   char * filename;
   size_t filesize;
@@ -64,39 +62,7 @@ void process_cuda(int8_t *data, raw_file_t *raw_file){
     cudaMemcpy(d_data, data, raw_file->chunksize, cudaMemcpyHostToDevice);
 }
 
-void parse_use_fopen(char *fname){
-    FILE* fp;
-    char buffer[MAX_RAW_HDR_SIZE];
-    raw_file_t raw_file;
-    int i=0;
-    
 
-    if(!fname){
-      printf("Please enter a GUPPI RAW file to parse.\n");
-      return;
-    }
-
-    printf("Opening File: %s\n", fname);    
-    fp = fopen(fname,"rb");         
-
-    if(fp == NULL){
-        printf("Error opening file");
-    }
-
-    fread(&buffer,sizeof(buffer),1,fp);
-
-    int hdr_size = parse_raw_header(buffer, MAX_RAW_HDR_SIZE, &raw_file);
-
-    // if(!hdr_size){
-    //     printf("Error parsing header. Couldn't find END record.");
-    //     return 0;
-    // }
-
-    //fwrite(&buffer, 1, hdr_size, stdout);
-
-    printf("\n");
-    fclose(fp);
-}
 
 void parse_use_open(char * fname){
     int fd;
@@ -174,6 +140,10 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
         //printf("Endptr: %.50s|\n", endptr);
         //printf("Found DirectIO at %d\n", i);
     }
+    else if (!strncmp(hdr+i, "BLOCSIZE", 8)){
+        raw_hdr->blocsize = strtoul(hdr+i+9, &endptr, 10);
+        printf("BLOCSIZE: %ld\n", raw_hdr->blocsize);
+    }
     // If we found the "END " record
     else if(!strncmp(hdr+i, "END ", 4)) {
       // Move to just after END record
@@ -184,10 +154,6 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
       }
       printf("hdr_size: found END at record %ld\n", i);
       return i;
-    }
-    else if (!strncmp(hdr+i, "BLOCSIZE", 8)){
-        raw_hdr->blocsize = strtoul(hdr+i+9, &endptr, 10);
-        printf("BLOCSIZE: %ld\n", raw_hdr->blocsize);
     }
     
   }
@@ -212,3 +178,36 @@ void calc_chunksize(raw_file_t *raw_file){
     }
 }
 
+void parse_use_fopen(char *fname){
+    FILE* fp;
+    char buffer[MAX_RAW_HDR_SIZE];
+    raw_file_t raw_file;
+    int i=0;
+    
+
+    if(!fname){
+      printf("Please enter a GUPPI RAW file to parse.\n");
+      return;
+    }
+
+    printf("Opening File: %s\n", fname);    
+    fp = fopen(fname,"rb");         
+
+    if(fp == NULL){
+        printf("Error opening file");
+    }
+
+    fread(&buffer,sizeof(buffer),1,fp);
+
+    int hdr_size = parse_raw_header(buffer, MAX_RAW_HDR_SIZE, &raw_file);
+
+    // if(!hdr_size){
+    //     printf("Error parsing header. Couldn't find END record.");
+    //     return 0;
+    // }
+
+    //fwrite(&buffer, 1, hdr_size, stdout);
+
+    printf("\n");
+    fclose(fp);
+}
