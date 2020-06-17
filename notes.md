@@ -11,6 +11,8 @@ Accomplished:
  - Created basic Makefile
  - Basic IO working with fopen and open
  - Test transfer speeds to GPU
+ - Test cudaMalloc vs cudaHostAlloc speeds - pinned vs non-pinned
+
 
   
 
@@ -18,7 +20,6 @@ TODO:
 
  - Time different read methods
  - Create CUDA-enabled Makefile
- - Test cudaMalloc vs cudaHostAlloc speeds - pinned vs non-pinned
  - Create simple GPU accelerated energy detection algorithm
  - Test synchronous GPU memory exchange and processing
  - Time entire process with detection write out to NVME module
@@ -45,3 +46,5 @@ TODO:
     - From my knowledge, pinning memory is good for this application because even though we won't read from this data multiple times, we will need to use asynchronous copy to the GPU. This is only possible with pinned memory. It also lets us use the full speed of the PCIE lines. However, we have to be careful with RAM usage. I'm unsure how much RAM the MeerKAT machines have.
 
 - mmap -> cudaMalloc then cudaMemcpy of 4.232 GBs of data took ~ 0.7 seconds (6.05 GB/s)
+- mmap -> cudaAllocHost -> cudaMemcpy = Transfer rate of 12.21 GB/s
+- mmap -> cudaMemcpy = Transfer rate of ~1 GB/s

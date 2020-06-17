@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -7,42 +8,7 @@
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include </usr/local/cuda/include/cuda.h>
-#include </usr/local/cuda/include/cuda_runtime.h>
-
-// TODO: Check to see if this large of size is needed
-#define MAX_RAW_HDR_SIZE (25600)
-#define MAX_CHUNKSIZE (5368709120) // 5GB - set so that too much memory isn't pinned
-#define BYTES_PER_GB (1000000000)
-
-typedef struct {
-  char * filename;
-  size_t filesize;
-  unsigned int nblocks;
-  long int chunksize;
-  unsigned int nchunks;
-  int directio; // whether or not DIRECTIO flag was size
-  size_t blocsize;
-  unsigned int npol;
-  unsigned int obsnchan;
-  unsigned int overlap;
-  double obsfreq;
-  double obsbw;
-  double tbin;
-  double mjd;
-  //char src_name[81];
-  //char telescop[81];
-  off_t hdr_pos; // Offset of start of header
-  size_t hdr_size; // Size of header in bytes including DIRECTIO padding if applicable
-} raw_file_t;
-
-
-int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
-void process_cuda(int8_t *data, raw_file_t *raw_file);
-void parse_use_open(char * fname);
-void parse_use_fopen(char *fname);
-void calc_chunksize(raw_file_t *raw_file);
-
+#include "magic.h"
 
 int main(int argc, char *argv[]){
 
@@ -52,17 +18,6 @@ int main(int argc, char *argv[]){
     
     return 0;
 };
-
-void process_cuda(int8_t *data, raw_file_t *raw_file){
-    int8_t *d_data;
-    printf("CudaMalloc size: %0.3f GBs\n", (float) raw_file->chunksize / BYTES_PER_GB);
-
-    cudaMalloc((void *) &d_data, raw_file->chunksize);
-    //cudaHostAlloc((void *) data, raw_file->chunksize, cudaHostAllocDefault);
-    cudaMemcpy(d_data, data, raw_file->chunksize, cudaMemcpyHostToDevice);
-}
-
-
 
 void parse_use_open(char * fname){
     int fd;
@@ -83,41 +38,34 @@ void parse_use_open(char * fname){
     raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
     raw_file.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_file);
 
-    pos = lseek(fd, raw_file.hdr_size, SEEK_SET);
-    printf("Now at pos: %ld\n", pos);
-
-    // Need padding to create an mmap offset size of a multiple system's page size
-    //int mmap_pad = raw_file.hdr_size % PAGESIZE;
-    //printf("mmap pad: %i\n", mmap_pad);
-
     raw_file.filesize = lseek(fd, 0, SEEK_END);
     printf("file size: %ld", raw_file.filesize);
 
-    calc_chunksize(&raw_file);
+    raw_file.nblocks = raw_file.filesize / (raw_file.hdr_size + raw_file.blocsize);
 
-    if(!raw_file.chunksize){
-      printf("Error calculating chunksize for given raw_file.");
-      return;
-    }
-    printf("Chunksize: %ld", raw_file.chunksize);
+    pos = lseek(fd, raw_file.hdr_size, SEEK_SET);
+    printf("Now at pos: %ld\n", pos);
 
-    int8_t *bloc_data = (int8_t *) mmap(NULL, raw_file.chunksize, PROT_READ, MAP_SHARED, fd, 0);
-
-    // Print out complex polarization values
-    for(int i =raw_file.hdr_size - 4; i< raw_file.hdr_size + 16; i += 4){
-      printf("I: %i\n", i);
-      printf("(%d, %d), (%d, %d)\n\n", bloc_data[i], bloc_data[i+1], bloc_data[i+2], bloc_data[i+3]);
-      
-    }
-    printf("Size of bloc_data: %ld\n", raw_file.chunksize );
-
-    process_cuda(bloc_data, &raw_file);
+    
     
 
+    int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
+    for(int block = 0; block < raw_file.nblocks; block++){
+      unsigned long block_index = raw_file.hdr_size + block * (raw_file.hdr_size + raw_file.blocsize);
+      int8_t block_address = file_mmap[block_index];
+
+      for(unsigned long int i = block_index - 4; i< block_index + 8; i += 4){
+        printf("I: %li\n", i);
+        printf("Address: %p\n", &file_mmap[i]);
+        printf("(%d, %d), (%d, %d)\n\n", file_mmap[i], file_mmap[i+1], file_mmap[i+2], file_mmap[i+3]);
+      }
+      process_cuda_block(&file_mmap[block_index], &raw_file);
+
+      printf("Block: %d  Index: %ld  Contents: %d\n", block, block_index, block_address);
+
+    }
+
     close(fd);
-
-    //fwrite(&bloc_data, 1, raw_file.hdr_size + mmap_pad, stdout);
-
 };
 
 // Returns the last byte location of the header
@@ -162,21 +110,24 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
 
 // Calculates the number of data chunks to pass to the GPU
 // Dependent on the MAX_CHUNKSIZE
-void calc_chunksize(raw_file_t *raw_file){
-    //TODO: Create good chunksize algorithm
-    size_t chunksize = raw_file->filesize;
+// void calc_chunksize(raw_file_t *raw_file){
+//     // First calculate nblocks for raw file
+//     
+//     //TODO: Create good chunksize algorithm
+//     size_t chunksize = raw_file->filesize;
 
-    for(int chunks = 1; chunks < 128; chunks *= 2){
-      chunksize = raw_file->filesize / chunks;
-      printf("Chunksize in function: %ld\n", chunksize);
+//     for(int chunks = 1; chunks <= 128; chunks *= 2){
+//       chunksize = raw_file->filesize / chunks;
 
-      if(chunksize < MAX_CHUNKSIZE){
-          raw_file->chunksize = chunksize;
-          raw_file->nchunks = chunks;
-          return;
-      }
-    }
-}
+//       if(chunksize < MAX_CHUNKSIZE){
+//           raw_file->chunksize = chunksize;
+//           raw_file->nchunks = chunks;
+//           raw_file->blocks_per_chunk = raw_file->nblocks / chunks;
+//           printf("Blocks per chunk: %d", raw_file->blocks_per_chunk);
+//           return;
+//       }
+//     }
+// }
 
 void parse_use_fopen(char *fname){
     FILE* fp;
