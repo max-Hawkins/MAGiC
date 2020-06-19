@@ -103,5 +103,6 @@ extern "C" void get_device_info(){
         cudaGetDeviceProperties(&devProp, i);
         printf("Device %d: %s\n", i, devProp.name);
     }
+    cudaFree(0);
     printf("------------------------------------------------\n\n");
 }
