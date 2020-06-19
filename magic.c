@@ -26,6 +26,9 @@ int main(int argc, char *argv[]){
         printf("Couldn't open file %s", fname);
         return -1;
     }    
+
+    get_device_info();
+
     // Read in header data and parse it
     raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
     raw_file.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_file);
@@ -38,17 +41,15 @@ int main(int argc, char *argv[]){
     pos = lseek(fd, raw_file.hdr_size, SEEK_SET);
     printf("Now at pos: %ld\n", pos);
 
-    
-    
-
+    // mmaps the entire GUPPI file before breaking into individual blocks - need to change for concurrency
     int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    for(int block = 0; block < raw_file.nblocks; block++){
+    for(int block = 0; block < 4; block++){
+      printf("\n\n--------- Block %d ----------\n", block);
       unsigned long block_index = raw_file.hdr_size + block * (raw_file.hdr_size + raw_file.blocsize);
       int8_t block_address = file_mmap[block_index];
 
       for(unsigned long int i = block_index - 4; i< block_index + 8; i += 4){
-        printf("I: %li\n", i);
-        printf("Address: %p\n", &file_mmap[i]);
+        printf("I: %li  Address: %p\n", i, &file_mmap[i]);
         printf("(%d, %d), (%d, %d)\n\n", file_mmap[i], file_mmap[i+1], file_mmap[i+2], file_mmap[i+3]);
       }
       process_cuda_block(&file_mmap[block_index], &raw_file);
@@ -59,12 +60,7 @@ int main(int argc, char *argv[]){
     }
 
     close(fd);
-    
     return 0;
-};
-
-void parse_use_open(char * fname){
-    
 };
 
 // Returns the last byte location of the header

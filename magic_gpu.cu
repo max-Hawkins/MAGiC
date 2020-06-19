@@ -8,7 +8,6 @@ extern "C" {
 
 #define MAX_THREADS_PER_BLOCK (1024) // For my personal desktop (2070 Super) - TODO: Change to MeerKAT size
 
-
 __global__ void power_spectrum(int8_t *complex_block, int *power_block, unsigned long blocsize){
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.y * blockDim.x + threadIdx.x)  * 4;
     if(i > blocsize){
@@ -40,13 +39,13 @@ extern "C" void process_cuda_block(int8_t *h_complex_block, raw_file_t *raw_file
     //     }
     // }
 
-    //cudaMalloc((void **) &d_complex_block, raw_file->blocsize);
-    //    printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+    cudaMalloc(&d_complex_block, raw_file->blocsize);
+        printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
     cudaMalloc(&d_spectrum, sizeof(int) * raw_file->blocsize / 4);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
-    cudaHostAlloc(&h_complex_block, raw_file->blocsize, cudaHostAllocMapped);
-        printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+    //cudaHostAlloc(&h_complex_block, raw_file->blocsize, cudaHostAllocMapped);
+    //    printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
     cudaHostAlloc(&h_spectrum, sizeof(int) * raw_file->blocsize / 4, cudaHostAllocDefault);
         printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
     cudaMemcpy(d_complex_block, h_complex_block, raw_file->blocsize, cudaMemcpyHostToDevice);
@@ -79,6 +78,30 @@ extern "C" void process_cuda_block(int8_t *h_complex_block, raw_file_t *raw_file
     cudaFree(d_spectrum);
     cudaFreeHost(h_spectrum);
     cudaFreeHost(h_complex_block);
-
+        printf("CudaFree:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 }
 
+extern "C" void get_device_info(){
+    int devCount;
+    int current_device;
+    cudaGetDeviceCount(&devCount);
+    cudaGetDevice(&current_device);
+
+    printf("-------------- CUDA Device Query ---------------\n");
+    printf("CUDA devices: %d\n", devCount);
+
+    // Iterate through devices
+    for (int i = 0; i < devCount; ++i)
+    {
+        // Get device properties
+        
+        printf("\nCUDA Device #%d\n", i);
+        if(i == current_device){
+            printf("--- Device being used ---\n");
+        }
+        cudaDeviceProp devProp;
+        cudaGetDeviceProperties(&devProp, i);
+        printf("Device %d: %s\n", i, devProp.name);
+    }
+    printf("------------------------------------------------\n\n");
+}

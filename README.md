@@ -1,5 +1,13 @@
 # MAGiC: MeeKAT Analysis of GUPPI in C
 
+## Usage
+
+```
+$ make
+$ ./magic <GUPPI_file>
+```
+
+
 ### Notes
 The following programs can be useful when debugging GUPPI parsing.
 
