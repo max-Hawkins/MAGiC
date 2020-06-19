@@ -30,7 +30,6 @@ typedef struct {
 
 int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
 void parse_use_open(char * fname);
-void parse_use_fopen(char *fname);
 void process_cuda_block(int8_t *data, raw_file_t *raw_file);
 // void calc_chunksize(raw_file_t *raw_file);
 

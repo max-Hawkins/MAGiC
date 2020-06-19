@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -12,18 +11,11 @@
 
 int main(int argc, char *argv[]){
 
-    //parse_use_fopen(argv[1]);
-
-    parse_use_open(argv[1]);
-    
-    return 0;
-};
-
-void parse_use_open(char * fname){
     int fd;
     raw_file_t raw_file;
     char buffer[MAX_RAW_HDR_SIZE];
     off_t pos;
+    char *fname = argv[1]; 
     // Get page size for reading later
     long PAGESIZE = sysconf(_SC_PAGESIZE);
     printf("Pagesize: %ld\n", PAGESIZE);
@@ -32,7 +24,7 @@ void parse_use_open(char * fname){
     fd = open(fname, O_RDONLY);
     if(fd == -1) {
         printf("Couldn't open file %s", fname);
-        return;
+        return -1;
     }    
     // Read in header data and parse it
     raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
@@ -50,7 +42,7 @@ void parse_use_open(char * fname){
     
 
     int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    for(int block = 0; block < raw_file.nblocks; block++){
+    for(int block = 0; block < 4; block++){
       unsigned long block_index = raw_file.hdr_size + block * (raw_file.hdr_size + raw_file.blocsize);
       int8_t block_address = file_mmap[block_index];
 
@@ -61,17 +53,25 @@ void parse_use_open(char * fname){
       }
       process_cuda_block(&file_mmap[block_index], &raw_file);
 
-      printf("Block: %d  Index: %ld  Contents: %d\n", block, block_index, block_address);
+      // printf("Block: %d  Index: %ld  Contents: %d\n", block, block_index, block_address);
+      printf("Block: %d  Index: %d  Contents: %d\n", block, 10000, file_mmap[block_index + 100]);
 
     }
 
     close(fd);
+    
+    return 0;
+};
+
+void parse_use_open(char * fname){
+    
 };
 
 // Returns the last byte location of the header
 // Mainly copied from rawspec_rawutils.c in rawspec
 // NOTE: Using hget like in rawspec seems like it might be inefficient.
 //       This does too. Need to benchmark this against it. 
+// Doesn't have to be efficient though since only ran once per large GB file
 int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
 {
   size_t i;
@@ -91,6 +91,10 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
     else if (!strncmp(hdr+i, "BLOCSIZE", 8)){
         raw_hdr->blocsize = strtoul(hdr+i+9, &endptr, 10);
         printf("BLOCSIZE: %ld\n", raw_hdr->blocsize);
+    }
+    else if (!strncmp(hdr+i, "OBSNCHAN", 8)){
+        raw_hdr->obsnchan = strtoul(hdr+i+9, &endptr, 10);
+        printf("OBSNCHAN: %dd\n", raw_hdr->obsnchan);
     }
     // If we found the "END " record
     else if(!strncmp(hdr+i, "END ", 4)) {
@@ -128,37 +132,3 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
 //       }
 //     }
 // }
-
-void parse_use_fopen(char *fname){
-    FILE* fp;
-    char buffer[MAX_RAW_HDR_SIZE];
-    raw_file_t raw_file;
-    int i=0;
-    
-
-    if(!fname){
-      printf("Please enter a GUPPI RAW file to parse.\n");
-      return;
-    }
-
-    printf("Opening File: %s\n", fname);    
-    fp = fopen(fname,"rb");         
-
-    if(fp == NULL){
-        printf("Error opening file");
-    }
-
-    fread(&buffer,sizeof(buffer),1,fp);
-
-    int hdr_size = parse_raw_header(buffer, MAX_RAW_HDR_SIZE, &raw_file);
-
-    // if(!hdr_size){
-    //     printf("Error parsing header. Couldn't find END record.");
-    //     return 0;
-    // }
-
-    //fwrite(&buffer, 1, hdr_size, stdout);
-
-    printf("\n");
-    fclose(fp);
-}

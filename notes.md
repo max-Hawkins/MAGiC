@@ -12,6 +12,8 @@ Accomplished:
  - Basic IO working with fopen and open
  - Test transfer speeds to GPU
  - Test cudaMalloc vs cudaHostAlloc speeds - pinned vs non-pinned
+ - Create CUDA-enabled Makefile
+ - Test if cudaRegisterHost is faster with mmaped data than cudaHostAlloc
 
 
   
@@ -19,12 +21,12 @@ Accomplished:
 TODO:
 
  - Time different read methods
- - Create CUDA-enabled Makefile
  - Create simple GPU accelerated energy detection algorithm
  - Test synchronous GPU memory exchange and processing
  - Time entire process with detection write out to NVME module
  - Confirm largest header size
  - Test if increasing the system pagesize decreases time cost of pinning large chunks of memory
+ 
 
   
 ## Assumptions
@@ -48,3 +50,6 @@ TODO:
 - mmap -> cudaMalloc then cudaMemcpy of 4.232 GBs of data took ~ 0.7 seconds (6.05 GB/s)
 - mmap -> cudaAllocHost -> cudaMemcpy = Transfer rate of 12.21 GB/s
 - mmap -> cudaMemcpy = Transfer rate of ~1 GB/s
+
+- Using cudaHostRegister is 2x slower than using cudaAllocHost
+- Helpful program for getting CUDA device properties: http://www.cs.fsu.edu/~xyuan/cda5125/examples/lect24/devicequery.cu (TODO: run this on MeerKAT hardware)
