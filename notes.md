@@ -47,9 +47,15 @@ TODO:
     - My understanding: Pinned memory is stored in RAM and can be directly transferred to GPU using DMA. Non-pinned memory could also be in swap, so the CPU has to transfer the data to a pinned buffer before transferring to the GPU using DMA. Seems like pinning larges amounts of memory at once is better than making the CPU do it when you try to transfer non-pinned memory to the GPU. Reportedly faster speeds if the pagesize is increased. Need to test.
     - From my knowledge, pinning memory is good for this application because even though we won't read from this data multiple times, we will need to use asynchronous copy to the GPU. This is only possible with pinned memory. It also lets us use the full speed of the PCIE lines. However, we have to be careful with RAM usage. I'm unsure how much RAM the MeerKAT machines have.
 
+# On personal machine (2070 super)
 - mmap -> cudaMalloc then cudaMemcpy of 4.232 GBs of data took ~ 0.7 seconds (6.05 GB/s)
 - mmap -> cudaAllocHost -> cudaMemcpy = Transfer rate of 12.21 GB/s
 - mmap -> cudaMemcpy = Transfer rate of ~1 GB/s
+
+# On blpc1 Titan Xp
+    - CUDA context initialization can take 20-40 seconds
+    - ~5.3 GB/s transfer non-pinned
+    - 
 
 - Using cudaHostRegister is 2x slower than using cudaAllocHost
 - Helpful program for getting CUDA device properties: http://www.cs.fsu.edu/~xyuan/cda5125/examples/lect24/devicequery.cu (TODO: run this on MeerKAT hardware)
