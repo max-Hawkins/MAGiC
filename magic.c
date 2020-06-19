@@ -26,7 +26,7 @@ int main(int argc, char *argv[]){
         printf("Couldn't open file %s", fname);
         return -1;
     }    
-
+    // Initializes cuda context and show GPU names 
     get_device_info();
 
     // Read in header data and parse it
@@ -43,7 +43,7 @@ int main(int argc, char *argv[]){
 
     // mmaps the entire GUPPI file before breaking into individual blocks - need to change for concurrency
     int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    for(int block = 0; block < 4; block++){
+    for(int block = 0; block < raw_file.blocsize; block++){
       printf("\n\n--------- Block %d ----------\n", block);
       unsigned long block_index = raw_file.hdr_size + block * (raw_file.hdr_size + raw_file.blocsize);
       int8_t block_address = file_mmap[block_index];

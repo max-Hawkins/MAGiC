@@ -44,8 +44,8 @@ extern "C" void process_cuda_block(int8_t *h_complex_block, raw_file_t *raw_file
     cudaMalloc(&d_spectrum, sizeof(int) * raw_file->blocsize / 4);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
-    //cudaHostAlloc(&h_complex_block, raw_file->blocsize, cudaHostAllocMapped);
-    //    printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+    cudaHostAlloc(&h_complex_block, raw_file->blocsize, cudaHostAllocMapped);
+       printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
     cudaHostAlloc(&h_spectrum, sizeof(int) * raw_file->blocsize / 4, cudaHostAllocDefault);
         printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
     cudaMemcpy(d_complex_block, h_complex_block, raw_file->blocsize, cudaMemcpyHostToDevice);
