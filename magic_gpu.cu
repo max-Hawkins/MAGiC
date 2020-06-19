@@ -94,9 +94,7 @@ extern "C" void get_device_info(){
     for (int i = 0; i < devCount; ++i)
     {
         // Get device properties
-        
-        printf("\nCUDA Device #%d\n", i);
-        if(i == current_device){
+                if(i == current_device){
             printf("--- Device being used ---\n");
         }
         cudaDeviceProp devProp;
