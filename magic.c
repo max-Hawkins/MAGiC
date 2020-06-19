@@ -42,7 +42,7 @@ int main(int argc, char *argv[]){
     
 
     int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    for(int block = 0; block < 4; block++){
+    for(int block = 0; block < raw_file.nblocks; block++){
       unsigned long block_index = raw_file.hdr_size + block * (raw_file.hdr_size + raw_file.blocsize);
       int8_t block_address = file_mmap[block_index];
 
@@ -54,7 +54,7 @@ int main(int argc, char *argv[]){
       process_cuda_block(&file_mmap[block_index], &raw_file);
 
       // printf("Block: %d  Index: %ld  Contents: %d\n", block, block_index, block_address);
-      printf("Block: %d  Index: %d  Contents: %d\n", block, 10000, file_mmap[block_index + 100]);
+      printf("Block: %d  Index: %d  Contents: %d\n", block, TEST_INDEX, file_mmap[block_index + TEST_INDEX]);
 
     }
 

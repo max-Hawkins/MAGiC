@@ -4,6 +4,7 @@
 #define MAX_RAW_HDR_SIZE (25600)
 #define MAX_CHUNKSIZE (5368709120 / 2.5) // 5GB - set so that too much memory isn't pinned
 #define BYTES_PER_GB (1000000000)
+#define TEST_INDEX (10000)
 
 typedef struct {
   char * filename;
