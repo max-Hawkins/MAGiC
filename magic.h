@@ -27,7 +27,7 @@ typedef struct {
 } raw_file_t;
 
 int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
-void process_cuda_block(int8_t *data, raw_file_t *raw_file);
+void create_power_spectrum(int8_t *data, raw_file_t *raw_file);
 void get_device_info();
 // void calc_chunksize(raw_file_t *raw_file);
 

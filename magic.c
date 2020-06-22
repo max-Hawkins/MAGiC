@@ -14,16 +14,21 @@ int main(int argc, char *argv[]){
     int fd;
     raw_file_t raw_file;
     char buffer[MAX_RAW_HDR_SIZE];
-    off_t pos;
-    char *fname = argv[1]; 
+    off_t pos; 
     // Get page size for reading later
     long PAGESIZE = sysconf(_SC_PAGESIZE);
     printf("Pagesize: %ld\n", PAGESIZE);
 
-    raw_file.filename = fname;
-    fd = open(fname, O_RDONLY);
+    if(!argv[1]){
+      printf("Please input a GUPPI file to process.\n");
+      return -1;
+    }
+
+    raw_file.filename = argv[1];
+    printf("file: %s", raw_file.filename);
+    fd = open(raw_file.filename, O_RDONLY);
     if(fd == -1) {
-        printf("Couldn't open file %s", fname);
+        printf("Couldn't open file %s", raw_file.filename);
         return -1;
     }    
     // Initializes cuda context and show GPU names 
@@ -43,7 +48,7 @@ int main(int argc, char *argv[]){
 
     // mmaps the entire GUPPI file before breaking into individual blocks - need to change for concurrency
     int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    for(int block = 0; block < raw_file.nblocks; block++){
+    for(int block = 0; block < 1; block++){
       printf("\n\n--------- Block %d ----------\n", block);
       unsigned long block_index = raw_file.hdr_size + block * (raw_file.hdr_size + raw_file.blocsize);
       int8_t block_address = file_mmap[block_index];
@@ -52,7 +57,7 @@ int main(int argc, char *argv[]){
         printf("I: %li  Address: %p\n", i, &file_mmap[i]);
         printf("(%d, %d), (%d, %d)\n\n", file_mmap[i], file_mmap[i+1], file_mmap[i+2], file_mmap[i+3]);
       }
-      process_cuda_block(&file_mmap[block_index], &raw_file);
+      create_power_spectrum(&file_mmap[block_index], &raw_file);
 
       // printf("Block: %d  Index: %ld  Contents: %d\n", block, block_index, block_address);
       printf("Block: %d  Index: %d  Contents: %d\n", block, TEST_INDEX, file_mmap[block_index + TEST_INDEX]);
@@ -60,6 +65,11 @@ int main(int argc, char *argv[]){
     }
 
     close(fd);
+
+
+    
+
+
     return 0;
 };
 
@@ -107,6 +117,8 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
   }
   return 0;
 }
+
+
 
 // Calculates the number of data chunks to pass to the GPU
 // Dependent on the MAX_CHUNKSIZE

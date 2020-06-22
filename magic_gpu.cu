@@ -11,7 +11,6 @@ extern "C" {
 __global__ void power_spectrum(int8_t *complex_block, int *power_block, unsigned long blocsize){
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.y * blockDim.x + threadIdx.x)  * 4;
     if(i > blocsize){
-        printf("Exceeded array bounds in kernel");
         return;
     }
     // TODO: use dp4a 8 bit math acceleration
@@ -26,7 +25,7 @@ __global__ void power_spectrum(int8_t *complex_block, int *power_block, unsigned
     power_block[i / 4] = power;
 }
 
-extern "C" void process_cuda_block(int8_t *h_complex_block, raw_file_t *raw_file){
+extern "C" void create_power_spectrum(int8_t *h_complex_block, raw_file_t *raw_file){
     int8_t *d_complex_block;
     int *d_spectrum;
     int *h_spectrum;
@@ -53,7 +52,7 @@ extern "C" void process_cuda_block(int8_t *h_complex_block, raw_file_t *raw_file
 
 
     unsigned long grid_dim_x = raw_file->blocsize / (MAX_THREADS_PER_BLOCK);
-    dim3 griddim(5, 1, 1);
+    dim3 griddim(grid_dim_x, 1, 1);
     dim3 blockdim(MAX_THREADS_PER_BLOCK / raw_file->obsnchan, raw_file->obsnchan);
 
     power_spectrum<<<griddim, blockdim>>>(d_complex_block, d_spectrum, raw_file->blocsize);
@@ -73,6 +72,12 @@ extern "C" void process_cuda_block(int8_t *h_complex_block, raw_file_t *raw_file
                     h_complex_block[TEST_INDEX], h_complex_block[TEST_INDEX+1], h_complex_block[TEST_INDEX+2], h_complex_block[TEST_INDEX+3]);
     printf("After Kernel!\tH_Spectrum %d: %d\n", TEST_INDEX / 4, h_spectrum[TEST_INDEX / 4]);
     
+    FILE *f = fopen("block0_power.dat", "wb");
+    int status = fwrite(h_spectrum, sizeof(int), raw_file->blocsize / 4, f);
+    if(!status){
+      perror("Error writing array to file!");
+    }
+
 
     cudaFree(d_complex_block);
     cudaFree(d_spectrum);
