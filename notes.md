@@ -67,3 +67,7 @@ Summer 2020 - Breakthrough Listen Internship
 
 - Using cudaHostRegister is 2x slower than using cudaAllocHost
 - Helpful program for getting CUDA device properties: http://www.cs.fsu.edu/~xyuan/cda5125/examples/lect24/devicequery.cu (TODO: run this on MeerKAT hardware)
+
+### Power Spectrum Creation
+ - One block on python: ~8 minutes
+ - One block on CUDA/TitanXp (only kernel exec time with naive multiplication): 1.8164 ms 

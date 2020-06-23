@@ -3,10 +3,8 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/types.h>
-#include <string.h>
 #include <math.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include "magic.h"
 
 int main(int argc, char *argv[]){
@@ -32,7 +30,7 @@ int main(int argc, char *argv[]){
         printf("Couldn't open file %s", raw_file.filename);
         return -1;
     }    
-    printf("Opened file: %s", raw_file.trimmed_filename);
+    printf("Opened file: %s\n", raw_file.filename);
     // Initializes cuda context and show GPU names 
     get_device_info();
 
@@ -50,7 +48,7 @@ int main(int argc, char *argv[]){
 
     // mmaps the entire GUPPI file before breaking into individual blocks - need to change for concurrency
     int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    for(int block = 0; block < 1; block++){
+    for(int block = 0; block < raw_file.nblocks; block++){
       printf("\n\n--------- Block %d ----------\n", block);
       unsigned long block_index = raw_file.hdr_size + block * (raw_file.hdr_size + raw_file.blocsize);
       int8_t block_address = file_mmap[block_index];
@@ -59,7 +57,7 @@ int main(int argc, char *argv[]){
         printf("I: %li  Address: %p\n", i, &file_mmap[i]);
         printf("(%d, %d), (%d, %d)\n\n", file_mmap[i], file_mmap[i+1], file_mmap[i+2], file_mmap[i+3]);
       }
-      create_power_spectrum(&file_mmap[block_index], &raw_file);
+      create_power_spectrum(&file_mmap[block_index], &raw_file, block);
 
       // printf("Block: %d  Index: %ld  Contents: %d\n", block, block_index, block_address);
       printf("Block: %d  Index: %d  Contents: %d\n", block, TEST_INDEX, file_mmap[block_index + TEST_INDEX]);
@@ -67,11 +65,6 @@ int main(int argc, char *argv[]){
     }
 
     close(fd);
-
-
-    
-
-
     return 0;
 };
 
@@ -120,6 +113,7 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
   return 0;
 }
 
+// strips the user-supplied filename 
 char *trim_filename(char *str)
 {
     char *trimmed_filename = strdup(str);
@@ -133,8 +127,6 @@ char *trim_filename(char *str)
     endp = trimmed_filename + len;
     // Remove '.raw' at end of filename
     endp[-4] = '\0';
-    printf("original: %s\n", str);
-    printf("Edited: %s\n", trimmed_filename);
    
     return trimmed_filename;
 }
