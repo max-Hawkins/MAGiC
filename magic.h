@@ -7,6 +7,7 @@
 
 typedef struct {
   char * filename;
+  char * trimmed_filename;
   size_t filesize;
   size_t blocsize;
   size_t hdr_size; // Size of header in bytes including DIRECTIO padding if applicable
@@ -29,6 +30,7 @@ typedef struct {
 int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
 void create_power_spectrum(int8_t *data, raw_file_t *raw_file);
 void get_device_info();
+char *trim_filename(char *str);
 // void calc_chunksize(raw_file_t *raw_file);
 
 

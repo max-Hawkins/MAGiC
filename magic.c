@@ -25,12 +25,14 @@ int main(int argc, char *argv[]){
     }
 
     raw_file.filename = argv[1];
-    printf("file: %s", raw_file.filename);
+    raw_file.trimmed_filename = trim_filename(raw_file.filename);
+
     fd = open(raw_file.filename, O_RDONLY);
     if(fd == -1) {
         printf("Couldn't open file %s", raw_file.filename);
         return -1;
     }    
+    printf("Opened file: %s", raw_file.trimmed_filename);
     // Initializes cuda context and show GPU names 
     get_device_info();
 
@@ -118,6 +120,24 @@ int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
   return 0;
 }
 
+char *trim_filename(char *str)
+{
+    char *trimmed_filename = strdup(str);
+    size_t len = 0;
+    char *endp = NULL;
+
+    // Remove any relative pathing to get GUPPI base filename
+    trimmed_filename = strrchr(trimmed_filename, '/') + 1;
+
+    len = strlen(trimmed_filename);
+    endp = trimmed_filename + len;
+    // Remove '.raw' at end of filename
+    endp[-4] = '\0';
+    printf("original: %s\n", str);
+    printf("Edited: %s\n", trimmed_filename);
+   
+    return trimmed_filename;
+}
 
 
 // Calculates the number of data chunks to pass to the GPU
