@@ -29,7 +29,7 @@ typedef struct {
 } raw_file_t;
 
 int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
-void create_power_spectrum(int8_t *data, raw_file_t *raw_file, int block);
+void create_power_spectrum(int8_t *file_mmap, raw_file_t *raw_file, int num_cuda_streams);
 void get_device_info();
 char *trim_filename(char *str);
 // void calc_chunksize(raw_file_t *raw_file);
