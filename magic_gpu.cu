@@ -47,27 +47,33 @@ extern "C" void create_power_spectrum(int8_t *file_mmap, raw_file_t *raw_file, i
     }
         
     
-    for(int block = 0; block < raw_file->nblocks + 4; block+= num_streams){
+    for(int block = 0; block < raw_file->nblocks; block+= num_streams){
         // Malloc and allocate memory for all streams
         for (int i = 0; i < num_streams; ++i) {
+            if(block + i >= raw_file->nblocks){
+                printf("Block number exceeded (%d). Skipping.\n", block + i);
+                break;
+            }
             unsigned long block_index = raw_file->hdr_size + (block + i) * (raw_file->hdr_size + raw_file->blocsize);
             h_complex_blocks[i] = &file_mmap[block_index];
+            // int8_t *temp_ptr = &file_mmap[block_index];
 
-            printf("h complex: %p\t val: %d\n",&h_complex_blocks[i], h_complex_blocks[i][1000]);
+            printf("h complex: %p\t val: %d\n", h_complex_blocks[i], h_complex_blocks[i][1000]);
 
             cudaMalloc(&d_complex_blocks[i], raw_file->blocsize);
                 printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
             cudaMalloc(&d_spectra[i], sizeof(int) * raw_file->blocsize / 4);
                 printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
-            cudaHostAlloc(&h_complex_blocks[i], raw_file->blocsize, cudaHostAllocMapped);
+            cudaHostAlloc(&h_complex_blocks[i], raw_file->blocsize, cudaHostAllocPortable);
                 printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-            cudaHostAlloc(&h_spectra[i], sizeof(int) * raw_file->blocsize / 4, cudaHostAllocDefault);
+            cudaHostAlloc(&h_spectra[i], sizeof(int) * raw_file->blocsize / 4, cudaHostAllocMapped);
                 printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
-            cudaHostGetDevicePointer((void **)&h_complex_blocks[i], (void *)h_complex_blocks[i], 0);
+            // cudaHostGetDevicePointer((void **) &d_complex_blocks[i], (void *) h_complex_blocks[i], 0);
                 printf("CudaHostAlloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-            printf("h complex: %p\t val: %d\n",&h_complex_blocks[i], h_complex_blocks[i][1000]);
+            printf("h complex: %p\t val: %d\n", h_complex_blocks[i], h_complex_blocks[i][1000]);
+            //printf("Temp ptr: %p, %d\n", &d_complex_blocks[i], d_complex_blocks[i][1000]);
 
         }
 
@@ -80,7 +86,9 @@ extern "C" void create_power_spectrum(int8_t *file_mmap, raw_file_t *raw_file, i
                 break;
             }
 
-            printf("\n\n--------- Block %d  Stream %d ----------\n", block, cur_stream);
+            printf("\n\n--------- Block %d  Stream %d ----------\n", cur_block, cur_stream);
+
+            printf("h_complex: Location: %p\tPointer to val: %p\tVal: %d", &h_complex_blocks[cur_stream], h_complex_blocks[cur_stream], h_complex_blocks[cur_stream][10]);
 
             for(int i = 500; i< 508; i += 4){
                 printf("I: %i  Address: %p\n", i, &h_complex_blocks[cur_stream][i]);
@@ -101,6 +109,10 @@ extern "C" void create_power_spectrum(int8_t *file_mmap, raw_file_t *raw_file, i
         // Write data - TODO: implement with callbacks
         for (int i = 0; i < num_streams; ++i) {
             int cur_block = block + i;
+            if(cur_block >= raw_file->nblocks){
+                printf("Block number exceeded (%d). Skipping.", cur_block);
+                break;
+            }
             char *save_block_append = (char *) malloc(50);
             if(sprintf(save_block_append, "_block%03d_power.dat", cur_block) < 0){
                 printf("Error creating save_filename. Couldn't save file.");
@@ -163,6 +175,100 @@ extern "C" void create_power_spectrum(int8_t *file_mmap, raw_file_t *raw_file, i
 
     
 }
+__global__ void polarized_power(int8_t *complex_block, unsigned int *pol_power_block, unsigned long blocsize){
+    unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.y * blockDim.x + threadIdx.x)  * 4;
+    if(i > blocsize){
+        return;
+    }
+    // TODO: use dp4a 8 bit math acceleration
+    unsigned long power_x = complex_block[i] * complex_block[i]
+                            + complex_block[i+1] * complex_block[i+1];
+
+    unsigned long power_y = complex_block[i+2] * complex_block[i+2]
+                            + complex_block[i+3] * complex_block[i+3];
+
+    if(i == TEST_INDEX){
+        printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)  Pow: (%ld, %ld) \n\n", 
+                i, complex_block[i], complex_block[i+1], complex_block[i+2], complex_block[i+3], power_x, power_y);
+    } 
+    pol_power_block[i / 2]     = power_x;
+    pol_power_block[i / 2 + 1] = power_y;
+
+}
+
+void create_polarized_power(int fd, raw_file_t *raw_file){
+    off_t pos;
+    ssize_t bytes_read;
+
+    unsigned long grid_dim_x = raw_file->blocsize / (MAX_THREADS_PER_BLOCK);
+    dim3 griddim(grid_dim_x, 1, 1);
+    dim3 blockdim(MAX_THREADS_PER_BLOCK / raw_file->obsnchan, raw_file->obsnchan);
+
+    //int8_t complex_block[raw_file->blocsize];
+    int8_t *h_complex_block;
+    int8_t *d_complex_block;
+    unsigned int *h_polarized_block;
+    unsigned int *d_polarized_block;
+    
+    cudaHostAlloc(&h_complex_block, raw_file->blocsize, cudaHostAllocDefault);
+    cudaHostAlloc(&h_polarized_block, raw_file->blocsize  / 2, cudaHostAllocDefault);
+    cudaMalloc(&d_complex_block, raw_file->blocsize);
+    cudaMalloc(&d_polarized_block, raw_file->blocsize / 2);
+
+    pos = lseek(fd, raw_file->hdr_size, SEEK_SET);
+    printf("Now at pos: %ld\n", pos);
+
+    bytes_read = read(fd, h_complex_block, raw_file->blocsize);
+    if(bytes_read == -1){
+        perror("Read block error");
+        return;
+    } 
+    else if(bytes_read < raw_file->blocsize){
+        printf("----- Didn't read in full block - skipping.");
+        return;
+    }
+
+    //cudaHostRegister(h_complex_block, raw_file->blocsize, cudaHostRegisterDefault);
+    printf("Bytes read: %ld", bytes_read);
+
+    printf("Data: %d", h_complex_block[1000]);
+
+    cudaMemcpy(d_complex_block, h_complex_block, raw_file->blocsize, cudaMemcpyHostToDevice);
+
+    polarized_power<<<griddim, blockdim>>>(d_complex_block, d_polarized_block, raw_file->blocsize);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(h_polarized_block, d_polarized_block, raw_file->blocsize / 2, cudaMemcpyDeviceToHost);
+
+    // Write block to file
+    char *save_block_append = (char *) malloc(50);
+    if(sprintf(save_block_append, "_block%03d_pol_power.dat", 0) < 0){
+        printf("Error creating save_filename. Couldn't save file.");
+    }
+    else {
+        char *save_filename = (char *) malloc(70);
+        strcpy(save_filename, raw_file->trimmed_filename);
+        strcat(save_filename, save_block_append);
+
+        FILE *f = fopen(save_filename, "wb");
+        int status = fwrite(h_polarized_block, sizeof(int), raw_file->blocsize / 2, f);
+        if(!status){
+            perror("Error writing array to file!");
+        }
+        fclose(f);
+        free(save_filename);
+    }
+    free(save_block_append);
+
+
+
+    cudaFree(d_complex_block);
+    cudaFree(d_polarized_block);
+    cudaFreeHost(h_complex_block);
+    cudaFreeHost(h_polarized_block);
+}
+
+
 
 extern "C" void get_device_info(){
     int devCount;

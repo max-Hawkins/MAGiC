@@ -4,6 +4,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <math.h>
+
 #include <fcntl.h>
 #include "magic.h"
 
@@ -11,7 +12,7 @@ int main(int argc, char *argv[]){
 
     int fd;
     raw_file_t raw_file;
-    char buffer[MAX_RAW_HDR_SIZE];
+    char buffer[MAX_RAW_HDR_SIZE] __attribute__ ((aligned (512)));
     off_t pos; 
     int num_cuda_streams = 4;
     // Get page size for reading later
@@ -43,14 +44,14 @@ int main(int argc, char *argv[]){
     printf("file size: %ld", raw_file.filesize);
 
     raw_file.nblocks = raw_file.filesize / (raw_file.hdr_size + raw_file.blocsize);
-
-    pos = lseek(fd, raw_file.hdr_size, SEEK_SET);
-    printf("Now at pos: %ld\n", pos);
+    printf("Nblocks: %d", raw_file.nblocks);
+    
 
     // mmaps the entire GUPPI file before breaking into individual blocks - need to change for concurrency
-    int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    create_power_spectrum(file_mmap, &raw_file, num_cuda_streams);
+    // int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
+    // create_power_spectrum(file_mmap, &raw_file, num_cuda_streams);
     
+    create_polarized_power(fd, &raw_file);
 
     close(fd);
     return 0;

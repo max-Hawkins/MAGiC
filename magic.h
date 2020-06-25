@@ -1,6 +1,5 @@
 #include <unistd.h>
 #include <string.h>
-
 #define MAX_RAW_HDR_SIZE (25600) // From rawspec - TODO: Check to see if this large of size is needed
 #define MAX_CHUNKSIZE (5368709120 / 2.5) // 5GB - set so that too much memory isn't pinned
 #define BYTES_PER_GB (1073741824)
@@ -30,6 +29,7 @@ typedef struct {
 
 int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
 void create_power_spectrum(int8_t *file_mmap, raw_file_t *raw_file, int num_cuda_streams);
+void create_polarized_power(int fd, raw_file_t *raw_file);
 void get_device_info();
 char *trim_filename(char *str);
 // void calc_chunksize(raw_file_t *raw_file);
