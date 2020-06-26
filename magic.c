@@ -12,7 +12,7 @@ int main(int argc, char *argv[]){
 
     int fd;
     raw_file_t raw_file;
-    char buffer[MAX_RAW_HDR_SIZE] __attribute__ ((aligned (512)));
+    char buffer[MAX_RAW_HDR_SIZE];
     off_t pos; 
     int num_cuda_streams = 4;
     // Get page size for reading later
@@ -36,17 +36,18 @@ int main(int argc, char *argv[]){
     // Initializes cuda context and show GPU names 
     get_device_info();
 
+    pos = lseek(fd, 0, SEEK_SET);
     // Read in header data and parse it
     raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
     raw_file.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_file);
 
     raw_file.filesize = lseek(fd, 0, SEEK_END);
-    printf("file size: %ld", raw_file.filesize);
+    printf("file size: %ld\n", raw_file.filesize);
 
     raw_file.nblocks = raw_file.filesize / (raw_file.hdr_size + raw_file.blocsize);
-    printf("Nblocks: %d", raw_file.nblocks);
+    printf("Nblocks: %d\n", raw_file.nblocks);
     
-
+    
     // mmaps the entire GUPPI file before breaking into individual blocks - need to change for concurrency
     // int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
     // create_power_spectrum(file_mmap, &raw_file, num_cuda_streams);
