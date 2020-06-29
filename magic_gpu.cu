@@ -177,21 +177,25 @@ extern "C" void create_power_spectrum(int8_t *file_mmap, raw_file_t *raw_file, i
 }
 // TODO: Create circularly polarized power kernel
 __global__ void polarized_power(int8_t *complex_block, unsigned int *pol_power_block, unsigned long blocsize){
+    
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.y * blockDim.x + threadIdx.x)  * 4;
     if(i > blocsize){
         return;
     }
     // TODO: use dp4a 8 bit math acceleration
-    pol_power_block[i / 2] = (unsigned int) complex_block[i] * complex_block[i]
-                            + complex_block[i+1] * complex_block[i+1];
+    unsigned int power_x = (unsigned int) (complex_block[i] * complex_block[i]
+                            + complex_block[i+1] * complex_block[i+1]);
 
-    pol_power_block[i / 2 + 1] = (unsigned int) complex_block[i+2] * complex_block[i+2]
-                            + complex_block[i+3] * complex_block[i+3];
+    unsigned int power_y = (unsigned int) (complex_block[i+2] * complex_block[i+2]
+                            + complex_block[i+3] * complex_block[i+3]);
 
-    // if(i == TEST_INDEX){
-    //     printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)  Pow: (%d, %d) \n\n", 
-    //             i, complex_block[i], complex_block[i+1], complex_block[i+2], complex_block[i+3], power_x, power_y);
-    // } 
+    if(i == TEST_INDEX){
+        printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)  Pow: (%d, %d) \n\n", 
+                i, complex_block[i], complex_block[i+1], complex_block[i+2], complex_block[i+3], power_x, power_y);
+    } 
+
+    pol_power_block[i / 2] = power_x;
+    pol_power_block[i / 2 + 1] = power_y;
 
 }
 
@@ -199,7 +203,7 @@ void create_polarized_power(int fd, raw_file_t *raw_file){
     off_t pos;
     ssize_t bytes_read;
 
-    unsigned long grid_dim_x = raw_file->blocsize / (MAX_THREADS_PER_BLOCK) / 4;
+    unsigned long grid_dim_x = raw_file->blocsize / (MAX_THREADS_PER_BLOCK);
     dim3 griddim(grid_dim_x, 1, 1);
     dim3 blockdim(MAX_THREADS_PER_BLOCK / raw_file->obsnchan, raw_file->obsnchan);
 
@@ -211,9 +215,9 @@ void create_polarized_power(int fd, raw_file_t *raw_file){
     
     cudaHostAlloc(&h_complex_block, raw_file->blocsize, cudaHostAllocDefault);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-    cudaHostAlloc(&h_polarized_block, raw_file->blocsize  / 2, cudaHostAllocDefault);
+    cudaHostAlloc(&h_polarized_block, raw_file->blocsize / 2 * sizeof(unsigned int), cudaHostAllocDefault);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-    cudaMalloc(&d_complex_block, raw_file->blocsize * sizeof(unsigned int));
+    cudaMalloc(&d_complex_block, raw_file->blocsize);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
     cudaMalloc(&d_polarized_block, raw_file->blocsize / 2 * sizeof(unsigned int));
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
@@ -239,15 +243,13 @@ void create_polarized_power(int fd, raw_file_t *raw_file){
         // cudaHostRegister(h_complex_block, raw_file->blocsize, cudaHostRegisterDefault);
         // printf("Bytes read: %ld", bytes_read);
 
-        printf("Data: %d", h_complex_block[1000]);
+        printf("Test Data: %d\n", h_complex_block[TEST_INDEX]);
 
         cudaMemcpy(d_complex_block, h_complex_block, raw_file->blocsize, cudaMemcpyHostToDevice);
             printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
         polarized_power<<<griddim, blockdim>>>(d_complex_block, d_polarized_block, raw_file->blocsize);
             printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-        // cudaDeviceSynchronize();
-            printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-        cudaMemcpy(h_polarized_block, d_polarized_block, raw_file->blocsize / 2, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_polarized_block, d_polarized_block, raw_file->blocsize / 2 * sizeof(unsigned int), cudaMemcpyDeviceToHost);
             printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
         // Write block to file
@@ -261,10 +263,11 @@ void create_polarized_power(int fd, raw_file_t *raw_file){
             strcat(save_filename, save_block_append);
 
             FILE *f = fopen(save_filename, "wb");
-            int status = fwrite(h_polarized_block, sizeof(int), raw_file->blocsize / 2, f);
+            int status = fwrite(h_polarized_block, sizeof(unsigned int), raw_file->blocsize / 2, f);
             if(!status){
                 perror("Error writing array to file!");
             }
+            printf("Num Elements written: %d", status);
             fclose(f);
             free(save_filename);
         }

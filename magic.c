@@ -10,14 +10,42 @@
 
 int main(int argc, char *argv[]){
 
+    int c;
+    int power_flag = 0;
+    int linear_pol_flag = 0;
+
     int fd;
     raw_file_t raw_file;
     char buffer[MAX_RAW_HDR_SIZE];
-    off_t pos; 
+    off_t pos;
+
     int num_cuda_streams = 4;
     // Get page size for reading later
     long PAGESIZE = sysconf(_SC_PAGESIZE);
     printf("Pagesize: %ld\n", PAGESIZE);
+
+
+    while ((c = getopt (argc, argv, "hpl")) != -1){
+      switch (c)
+        {
+        case 'h':
+          printf("Get help");
+          return 0;
+          break;
+        case 'p':
+          power_flag = 1;
+          break;
+        case 'l':
+          linear_pol_flag = 1;
+          break;
+        case '?':
+        default:
+          return 1;
+          break;
+        }
+    }
+
+
 
     if(!argv[1]){
       printf("Please input a GUPPI file to process.\n");
