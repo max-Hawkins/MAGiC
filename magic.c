@@ -22,14 +22,13 @@ int main(int argc, char *argv[]){
     int num_cuda_streams = 4;
     // Get page size for reading later
     long PAGESIZE = sysconf(_SC_PAGESIZE);
-    printf("Pagesize: %ld\n", PAGESIZE);
-
+    
 
     while ((c = getopt (argc, argv, "hpl")) != -1){
       switch (c)
         {
         case 'h':
-          printf("Get help");
+          usage();
           return 0;
           break;
         case 'p':
@@ -40,6 +39,8 @@ int main(int argc, char *argv[]){
           break;
         case '?':
         default:
+          printf("Error parsing user input.\n\n");
+          usage();
           return 1;
           break;
         }
@@ -49,6 +50,7 @@ int main(int argc, char *argv[]){
 
     if(!argv[1]){
       printf("Please input a GUPPI file to process.\n");
+      usage();
       return -1;
     }
 
@@ -148,7 +150,17 @@ char *trim_filename(char *str)
    
     return trimmed_filename;
 }
-
+void usage() {
+    fprintf(stderr,
+    "Usage: ./magic [GUPPI_file] [options]\n"
+    "\n"
+    "Options:\n"
+    "  -p,        Calculates and saves the power spectrum\n"
+    "  -l,        Calculates and saves the linearly polarized power\n"
+    "\n"
+    "  -h,              Show this message\n"
+  );
+}
 
 // Calculates the number of data chunks to pass to the GPU
 // Dependent on the MAX_CHUNKSIZE
