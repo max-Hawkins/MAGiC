@@ -9,7 +9,7 @@
 #include "magic.h"
 
 int main(int argc, char *argv[]){
-
+    extern int optind;
     int c;
     int power_flag = 0;
     int linear_pol_flag = 0;
@@ -20,10 +20,18 @@ int main(int argc, char *argv[]){
     off_t pos;
 
     int num_cuda_streams = 4;
-    // Get page size for reading later
-    long PAGESIZE = sysconf(_SC_PAGESIZE);
-    
+    long PAGESIZE = sysconf(_SC_PAGESIZE); // Get page size for reading later
 
+    if(!argv[1]){
+      printf("Please input a GUPPI file to process.\n");
+      usage();
+      return -1;
+    }
+    // Account for flagless filename argument
+    if(optind < argc){
+      optind += 1;
+    }
+    // Process command line arguments - TODO: long opts
     while ((c = getopt (argc, argv, "hpl")) != -1){
       switch (c)
         {
@@ -45,21 +53,16 @@ int main(int argc, char *argv[]){
           break;
         }
     }
+    printf("argv0: %s", argv[0]); 
 
-
-
-    if(!argv[1]){
-      printf("Please input a GUPPI file to process.\n");
-      usage();
-      return -1;
-    }
+    
 
     raw_file.filename = argv[1];
     raw_file.trimmed_filename = trim_filename(raw_file.filename);
 
     fd = open(raw_file.filename, O_RDONLY);
     if(fd == -1) {
-        printf("Couldn't open file %s", raw_file.filename);
+        printf("Couldn't open file %s\n", raw_file.filename);
         return -1;
     }    
     printf("Opened file: %s\n", raw_file.filename);
@@ -73,16 +76,18 @@ int main(int argc, char *argv[]){
 
     raw_file.filesize = lseek(fd, 0, SEEK_END);
     printf("file size: %ld\n", raw_file.filesize);
-
     raw_file.nblocks = raw_file.filesize / (raw_file.hdr_size + raw_file.blocsize);
     printf("Nblocks: %d\n", raw_file.nblocks);
     
+    if(linear_pol_flag){
+      printf("\n---Creating linearly polarized power spectrum.\n");
+      create_polarized_power(fd, &raw_file);
+    }    
+
+    if(power_flag){
+      printf("\n---Creating power spectrum.\n");
+    }
     
-    // mmaps the entire GUPPI file before breaking into individual blocks - need to change for concurrency
-    // int8_t *file_mmap = (int8_t *) mmap(NULL, raw_file.filesize, PROT_READ, MAP_SHARED, fd, 0);
-    // create_power_spectrum(file_mmap, &raw_file, num_cuda_streams);
-    
-    create_polarized_power(fd, &raw_file);
 
     close(fd);
     return 0;
@@ -158,7 +163,7 @@ void usage() {
     "  -p,        Calculates and saves the power spectrum\n"
     "  -l,        Calculates and saves the linearly polarized power\n"
     "\n"
-    "  -h,              Show this message\n"
+    "  -h,        Show this message\n"
   );
 }
 
