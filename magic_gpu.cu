@@ -9,13 +9,13 @@ extern "C" {
 #define MAX_THREADS_PER_BLOCK (1024) // For my personal desktop (2070 Super) - TODO: Change to MeerKAT size
 
 // CUDA kernel that takes a single GUPPI block and creates a power spectrum from it
-__global__ void power_spectrum(int8_t *complex_block, int *power_block, unsigned long blocsize){
+__global__ void power_spectrum(int8_t *complex_block, unsigned int *power_block, unsigned long blocsize){
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.y * blockDim.x + threadIdx.x)  * 4;
     if(i > blocsize){ // changes to blocsize
         return;
     }
     // TODO: use dp4a 8 bit math acceleration
-    unsigned long power = complex_block[i] * complex_block[i]
+    unsigned int power = complex_block[i] * complex_block[i]
                             + complex_block[i+1] * complex_block[i+1]
                             + complex_block[i+2] * complex_block[i+2]
                             + complex_block[i+3] * complex_block[i+3];
@@ -23,7 +23,7 @@ __global__ void power_spectrum(int8_t *complex_block, int *power_block, unsigned
     // printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)  Pow: %ld \n\n", 
     //             i, complex_block[i], complex_block[i+1], complex_block[i+2], complex_block[i+3], power);
     if(i == TEST_INDEX){
-        printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)  Pow: %ld \n\n", 
+        printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)  Pow: %d\n\n", 
                 i, complex_block[i], complex_block[i+1], complex_block[i+2], complex_block[i+3], power);
     } 
     power_block[i / 4] = power;
@@ -68,14 +68,17 @@ void create_power_spectrum(int fd, raw_file_t *raw_file, int num_streams){
     int8_t *d_complex_block;
     unsigned int *h_power_block;
     unsigned int *d_power_block;
-    
-    cudaHostAlloc(&h_complex_block, raw_file->blocsize, cudaHostAllocDefault);
+
+    size_t complex_block_size = raw_file->blocsize * num_streams;
+    size_t power_block_size   = raw_file->blocsize * num_streams / 4 * sizeof(unsigned int);
+
+    cudaHostAlloc(&h_complex_block, complex_block_size, cudaHostAllocDefault);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-    cudaHostAlloc(&h_power_block, raw_file->blocsize / 2 * sizeof(unsigned int), cudaHostAllocDefault);
+    cudaHostAlloc(&h_power_block, power_block_size, cudaHostAllocDefault);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-    cudaMalloc(&d_complex_block, raw_file->blocsize);
+    cudaMalloc(&d_complex_block, complex_block_size);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-    cudaMalloc(&d_power_block, raw_file->blocsize / 2 * sizeof(unsigned int));
+    cudaMalloc(&d_power_block, power_block_size);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
     pos = lseek(fd, 0, SEEK_SET);
@@ -105,12 +108,12 @@ void create_power_spectrum(int fd, raw_file_t *raw_file, int num_streams){
             printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
         polarized_power<<<griddim, blockdim>>>(d_complex_block, d_power_block, raw_file->blocsize);
             printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
-        cudaMemcpy(h_power_block, d_power_block, raw_file->blocsize / 2 * sizeof(unsigned int), cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_power_block, d_power_block, raw_file->blocsize / 4 * sizeof(unsigned int), cudaMemcpyDeviceToHost);
             printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
         // Write block to file
         char *save_block_append = (char *) malloc(50);
-        if(sprintf(save_block_append, "_block%03d_pol_power.dat", block) < 0){
+        if(sprintf(save_block_append, "_block%03d_power.dat", block) < 0){
             printf("Error creating save_filename. Couldn't save file.");
         }
         else {
@@ -119,7 +122,7 @@ void create_power_spectrum(int fd, raw_file_t *raw_file, int num_streams){
             strcat(save_filename, save_block_append);
 
             FILE *f = fopen(save_filename, "wb");
-            int status = fwrite(h_power_block, sizeof(unsigned int), raw_file->blocsize / 2, f);
+            int status = fwrite(h_power_block, sizeof(unsigned int), raw_file->blocsize / 4, f);
             if(!status){
                 perror("Error writing array to file!");
             }
@@ -231,9 +234,13 @@ void create_polarized_power(int fd, raw_file_t *raw_file){
     cudaFreeHost(h_polarized_block);
 }
 
+void ddc_coarse_chan(int fd, raw_file_t *raw_file, int chan, double i_freq){
+    
+
+}
 
 
-extern "C" void get_device_info(){
+void get_device_info(){
     int devCount;
     int current_device;
     cudaGetDeviceCount(&devCount);

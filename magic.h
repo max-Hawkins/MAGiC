@@ -31,6 +31,7 @@ void usage();
 int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr);
 void create_power_spectrum(int fd, raw_file_t *raw_file, int num_cuda_streams);
 void create_polarized_power(int fd, raw_file_t *raw_file);
+void ddc_coarse_chan(int fd, raw_file_t *raw_file, int chan, double i_freq);
 void get_device_info();
 char *trim_filename(char *str);
 // void calc_chunksize(raw_file_t *raw_file);

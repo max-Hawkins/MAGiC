@@ -4,7 +4,6 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <math.h>
-
 #include <fcntl.h>
 #include "magic.h"
 
@@ -13,13 +12,15 @@ int main(int argc, char *argv[]){
     int c;
     int power_flag = 0;
     int linear_pol_flag = 0;
+    int ddc_flag = 0;
+    int ddc_chan = -1;
+    double ddc_i_freq = 0;
 
     int fd;
     raw_file_t raw_file;
     char buffer[MAX_RAW_HDR_SIZE];
     off_t pos;
-
-    int num_cuda_streams = 4;
+    int num_cuda_streams = 1;
     long PAGESIZE = sysconf(_SC_PAGESIZE); // Get page size for reading later
 
     if(!argv[1]){
@@ -32,7 +33,7 @@ int main(int argc, char *argv[]){
       optind += 1;
     }
     // Process command line arguments - TODO: long opts
-    while ((c = getopt (argc, argv, "hpl")) != -1){
+    while ((c = getopt (argc, argv, "hpld:f:")) != -1){
       switch (c)
         {
         case 'h':
@@ -45,6 +46,13 @@ int main(int argc, char *argv[]){
         case 'l':
           linear_pol_flag = 1;
           break;
+        case 'd':
+          ddc_flag = 1;
+          ddc_chan = atoi(optarg);
+          break;
+        case 'f':
+          ddc_i_freq = strtod(optarg, NULL);
+          break;
         case '?':
         default:
           printf("Error parsing user input.\n\n");
@@ -53,9 +61,12 @@ int main(int argc, char *argv[]){
           break;
         }
     }
-    printf("argv0: %s", argv[0]); 
-
-    
+    // Check for correct flagging when DDC-ing
+    if(ddc_flag && (ddc_chan < 0 || ddc_i_freq <= 0)){
+      printf("Error: Need to give channel and IF to DDC.\n");
+      usage();
+      return -1;
+    }
 
     raw_file.filename = argv[1];
     raw_file.trimmed_filename = trim_filename(raw_file.filename);
@@ -86,6 +97,12 @@ int main(int argc, char *argv[]){
 
     if(power_flag){
       printf("\n---Creating power spectrum.\n");
+      create_power_spectrum(fd, &raw_file, 1);
+    }
+
+    if(ddc_flag){
+      printf("\n---Down-converting channel %d\t IF: %f\n", ddc_chan, ddc_i_freq);
+      ddc_coarse_chan(fd, &raw_file, ddc_chan, ddc_i_freq);
     }
     
 
@@ -157,13 +174,15 @@ char *trim_filename(char *str)
 }
 void usage() {
     fprintf(stderr,
-    "Usage: ./magic [GUPPI_file] [options]\n"
+    "\nUsage: ./magic [GUPPI_file] [options]\n"
     "\n"
     "Options:\n"
-    "  -p,        Calculates and saves the power spectrum\n"
-    "  -l,        Calculates and saves the linearly polarized power\n"
+    "  -p,                Calculates and saves the power spectrum\n"
+    "  -l,                Calculates and saves the linearly polarized power\n"
+    "  -d [coarse_chan],  Digitally down-convert coarse channel (see -f flag)"
+    "  -f [i_frequency],  Mix selected channel with i_frequency in MHz"
     "\n"
-    "  -h,        Show this message\n"
+    "  -h,                Show this message\n"
   );
 }
 
