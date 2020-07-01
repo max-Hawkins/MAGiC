@@ -1,5 +1,6 @@
 extern "C" {
 #include <stdio.h>
+#include <math.h>
 #include "magic.h"
 }
 #include </usr/local/cuda/include/cuda.h>
@@ -53,6 +54,7 @@ __global__ void polarized_power(int8_t *complex_block, unsigned int *pol_power_b
     pol_power_block[i / 2 + 1] = power_y;
 
 }
+
 
 void create_power_spectrum(int fd, rawspec_raw_hdr_t *raw_file, int num_streams){
 
@@ -234,9 +236,64 @@ void create_polarized_power(int fd, rawspec_raw_hdr_t *raw_file){
     cudaFreeHost(h_polarized_block);
 }
 
-void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_freq){
-    
+__global__ void ddc_channel(int8_t *raw_chan, int *ddc_chan, unsigned int raw_chan_size, int block){
+    unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.x)  * 4;
 
+
+    if(i == TEST_INDEX){
+        printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)\n\n", 
+                i, raw_chan[i], raw_chan[i+1], raw_chan[i+2], raw_chan[i+3]);
+    }
+}
+
+void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_freq){
+    off_t pos = lseek(fd, 0, SEEK_SET);
+    size_t bytes_to_chan;
+    size_t bytes_read;
+    size_t raw_chan_size   = raw_file->blocsize / raw_file->obsnchan;
+    size_t ddc_chan_size   = raw_file->blocsize / raw_file->obsnchan * sizeof(int);
+    
+    unsigned long grid_dim_x = (int) ceil(raw_chan_size / MAX_THREADS_PER_BLOCK / 4);
+    dim3 griddim(grid_dim_x, 1, 1);
+    dim3 blockdim(MAX_THREADS_PER_BLOCK, 1, 1);
+
+    int8_t *h_raw_chan;
+    int    *h_ddc_chan;
+    int8_t *d_raw_chan;
+    int    *d_ddc_chan;
+
+    bytes_to_chan = raw_file->hdr_size + chan * raw_chan_size;
+    printf("Raw chan size: %ld\n", raw_chan_size);
+    printf("bytes to chan: %ld\n", bytes_to_chan);
+
+    cudaHostAlloc(&h_raw_chan, raw_chan_size, cudaHostAllocDefault);
+        printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+    cudaHostAlloc(&h_ddc_chan, ddc_chan_size, cudaHostAllocDefault);
+        printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+    cudaMalloc(&d_raw_chan, raw_chan_size);
+        printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+    cudaMalloc(&d_ddc_chan, ddc_chan_size);
+        printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+
+    pos = lseek(fd, bytes_to_chan, SEEK_CUR);
+
+    for(int block = 0; block < 1; ++block){
+        
+        bytes_read = read(fd, h_raw_chan, raw_chan_size);
+        if(bytes_read != raw_chan_size){
+            printf("Error reading GUPPI file. Bytes read: %ld", bytes_read);
+            return;
+        }
+        print_complex_data(h_raw_chan, 1000*4);
+
+        ddc_channel<<<1,1>>> (d_raw_chan, d_ddc_chan, raw_chan_size, block);
+
+    }
+
+    cudaFree(d_raw_chan);
+    cudaFree(d_ddc_chan);
+    cudaFreeHost(h_raw_chan);
+    cudaFreeHost(h_ddc_chan);
 }
 
 
@@ -263,4 +320,9 @@ void get_device_info(){
     cudaSetDeviceFlags(cudaDeviceMapHost);
 	cudaFree(0);
     printf("------------------------------------------------\n\n");
+}
+
+void print_complex_data(int8_t *data, unsigned long index){
+    printf("Index: %ld  (%d, %d), (%d, %d)\n", 
+                index, data[index], data[index+1], data[index+2], data[index+3]);
 }

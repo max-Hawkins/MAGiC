@@ -10,6 +10,7 @@
 
 
 int main(int argc, char *argv[]){
+    // Command-line arg variables
     extern int optind;
     int c;
     int power_flag = 0;
@@ -19,8 +20,8 @@ int main(int argc, char *argv[]){
     double ddc_lo_freq = 0;
 
     int fd;
+    size_t pos;
     rawspec_raw_hdr_t rawspec_hdr;
-    off_t pos;
     int num_cuda_streams = 1;
     long PAGESIZE = sysconf(_SC_PAGESIZE); // Get page size for reading later
 

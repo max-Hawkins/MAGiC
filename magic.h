@@ -42,6 +42,7 @@ void create_power_spectrum(int fd, rawspec_raw_hdr_t *raw_hdr, int num_cuda_stre
 void create_polarized_power(int fd, rawspec_raw_hdr_t *raw_hdr);
 void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_hdr, int chan, double lo_freq);
 void get_device_info();
+void print_complex_data(int8_t *data, unsigned long index);
 char *trim_filename(char *str);
 // void calc_chunksize(raw_file_t *raw_file);
 
