@@ -54,7 +54,7 @@ __global__ void polarized_power(int8_t *complex_block, unsigned int *pol_power_b
 
 }
 
-void create_power_spectrum(int fd, raw_file_t *raw_file, int num_streams){
+void create_power_spectrum(int fd, rawspec_raw_hdr_t *raw_file, int num_streams){
 
     off_t pos;
     ssize_t bytes_read;
@@ -152,7 +152,7 @@ void create_power_spectrum(int fd, raw_file_t *raw_file, int num_streams){
 }
 
 // Creates linearly polarized power spectrum for an entire GUPPI raw file
-void create_polarized_power(int fd, raw_file_t *raw_file){
+void create_polarized_power(int fd, rawspec_raw_hdr_t *raw_file){
     off_t pos;
     ssize_t bytes_read;
 
@@ -234,7 +234,7 @@ void create_polarized_power(int fd, raw_file_t *raw_file){
     cudaFreeHost(h_polarized_block);
 }
 
-void ddc_coarse_chan(int fd, raw_file_t *raw_file, int chan, double i_freq){
+void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_freq){
     
 
 }

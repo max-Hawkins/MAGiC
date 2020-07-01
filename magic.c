@@ -5,7 +5,9 @@
 #include <sys/types.h>
 #include <math.h>
 #include <fcntl.h>
+#include "rawspec_rawutils.h"
 #include "magic.h"
+
 
 int main(int argc, char *argv[]){
     extern int optind;
@@ -14,11 +16,10 @@ int main(int argc, char *argv[]){
     int linear_pol_flag = 0;
     int ddc_flag = 0;
     int ddc_chan = -1;
-    double ddc_i_freq = 0;
+    double ddc_lo_freq = 0;
 
     int fd;
-    raw_file_t raw_file;
-    char buffer[MAX_RAW_HDR_SIZE];
+    rawspec_raw_hdr_t rawspec_hdr;
     off_t pos;
     int num_cuda_streams = 1;
     long PAGESIZE = sysconf(_SC_PAGESIZE); // Get page size for reading later
@@ -51,7 +52,7 @@ int main(int argc, char *argv[]){
           ddc_chan = atoi(optarg);
           break;
         case 'f':
-          ddc_i_freq = strtod(optarg, NULL);
+          ddc_lo_freq = strtod(optarg, NULL);
           break;
         case '?':
         default:
@@ -62,47 +63,60 @@ int main(int argc, char *argv[]){
         }
     }
     // Check for correct flagging when DDC-ing
-    if(ddc_flag && (ddc_chan < 0 || ddc_i_freq <= 0)){
-      printf("Error: Need to give channel and IF to DDC.\n");
+    if(ddc_flag && (ddc_chan < 0 || ddc_lo_freq <= 0)){
+      printf("Error: Need to give channel and LO to DDC.\n");
       usage();
       return -1;
     }
 
-    raw_file.filename = argv[1];
-    raw_file.trimmed_filename = trim_filename(raw_file.filename);
+    rawspec_hdr.filename = argv[1];
+    rawspec_hdr.trimmed_filename = trim_filename(rawspec_hdr.filename);
 
-    fd = open(raw_file.filename, O_RDONLY);
+    fd = open(rawspec_hdr.filename, O_RDONLY);
     if(fd == -1) {
-        printf("Couldn't open file %s\n", raw_file.filename);
+        printf("Couldn't open file %s\n", rawspec_hdr.filename);
         return -1;
     }    
-    printf("Opened file: %s\n", raw_file.filename);
+    printf("Opened file: %s\n", rawspec_hdr.filename);
+
+    // Parse raw header using rawspec functions - Credit: Dave McMahon
+    rawspec_raw_read_header(fd, &rawspec_hdr);
+    printf("Nchan: %d\n", rawspec_hdr.obsnchan);
+    printf("Hdr size: %ld\n", rawspec_hdr.hdr_size);
+    printf("Blocsize: %ld\n", rawspec_hdr.blocsize);
+
+    // Validate DDC channel exists
+    if(ddc_flag && ddc_chan > rawspec_hdr.obsnchan - 1){
+      printf("Selected channel doesn't exist. File only has %d coarse channels.", rawspec_hdr.obsnchan);
+      return -1;
+    }
+
     // Initializes cuda context and show GPU names 
     get_device_info();
 
     pos = lseek(fd, 0, SEEK_SET);
-    // Read in header data and parse it
-    raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
-    raw_file.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_file);
+    // // Read in header data and parse it
+    // raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
+    // raw_file.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_file);
 
-    raw_file.filesize = lseek(fd, 0, SEEK_END);
-    printf("file size: %ld\n", raw_file.filesize);
-    raw_file.nblocks = raw_file.filesize / (raw_file.hdr_size + raw_file.blocsize);
-    printf("Nblocks: %d\n", raw_file.nblocks);
+    // raw_file.filesize = lseek(fd, 0, SEEK_END);
+    // printf("file size: %ld\n", raw_file.filesize);
+    // raw_file.nblocks = raw_file.filesize / (raw_file.hdr_size + raw_file.blocsize);
+    // printf("Nblocks: %d\n", raw_file.nblocks);
     
     if(linear_pol_flag){
       printf("\n---Creating linearly polarized power spectrum.\n");
-      create_polarized_power(fd, &raw_file);
+      create_polarized_power(fd, &rawspec_hdr);
     }    
 
     if(power_flag){
       printf("\n---Creating power spectrum.\n");
-      create_power_spectrum(fd, &raw_file, 1);
+      create_power_spectrum(fd, &rawspec_hdr, 1);
     }
 
     if(ddc_flag){
-      printf("\n---Down-converting channel %d\t IF: %f\n", ddc_chan, ddc_i_freq);
-      ddc_coarse_chan(fd, &raw_file, ddc_chan, ddc_i_freq);
+      printf("\n---Down-converting channel %d\t LO: %f MHz\n", ddc_chan, ddc_lo_freq);
+      ddc_coarse_chan(fd, &rawspec_hdr, ddc_chan, ddc_lo_freq);
     }
     
 
@@ -115,45 +129,45 @@ int main(int argc, char *argv[]){
 // NOTE: Using hget like in rawspec seems like it might be inefficient.
 //       This does too. Need to benchmark this against it. 
 // Doesn't have to be efficient though since only ran once per large GB file
-int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
-{
-  size_t i;
-  char * endptr;
+// int parse_raw_header(char * hdr, size_t len, raw_file_t * raw_hdr)
+// {
+//   size_t i;
+//   char * endptr;
 
-  // Loop over the 80-byte records
-  // Compare the first characters for record headers
-  // Then save the information after the = sign into the header struct
-  for(i=0; i<len; i += 80) {
-    // First check for DIRECTIO
-    if (!strncmp(hdr+i, "DIRECTIO", 8)){
-        raw_hdr->directio = strtoul(hdr+i+9, &endptr, 10);
-        printf("DirectIO: %i\n", raw_hdr->directio);
-        //printf("Endptr: %.50s|\n", endptr);
-        //printf("Found DirectIO at %d\n", i);
-    }
-    else if (!strncmp(hdr+i, "BLOCSIZE", 8)){
-        raw_hdr->blocsize = strtoul(hdr+i+9, &endptr, 10);
-        printf("BLOCSIZE: %ld\n", raw_hdr->blocsize);
-    }
-    else if (!strncmp(hdr+i, "OBSNCHAN", 8)){
-        raw_hdr->obsnchan = strtoul(hdr+i+9, &endptr, 10);
-        printf("OBSNCHAN: %dd\n", raw_hdr->obsnchan);
-    }
-    // If we found the "END " record
-    else if(!strncmp(hdr+i, "END ", 4)) {
-      // Move to just after END record
-      i += 80;
-      // Account for DirectIO
-      if(raw_hdr->directio) {
-        i += (MAX_RAW_HDR_SIZE - i) % 512;
-      }
-      printf("hdr_size: found END at record %ld\n", i);
-      return i;
-    }
+//   // Loop over the 80-byte records
+//   // Compare the first characters for record headers
+//   // Then save the information after the = sign into the header struct
+//   for(i=0; i<len; i += 80) {
+//     // First check for DIRECTIO
+//     if (!strncmp(hdr+i, "DIRECTIO", 8)){
+//         raw_hdr->directio = strtoul(hdr+i+9, &endptr, 10);
+//         printf("DirectIO: %i\n", raw_hdr->directio);
+//         //printf("Endptr: %.50s|\n", endptr);
+//         //printf("Found DirectIO at %d\n", i);
+//     }
+//     else if (!strncmp(hdr+i, "BLOCSIZE", 8)){
+//         raw_hdr->blocsize = strtoul(hdr+i+9, &endptr, 10);
+//         printf("BLOCSIZE: %ld\n", raw_hdr->blocsize);
+//     }
+//     else if (!strncmp(hdr+i, "OBSNCHAN", 8)){
+//         raw_hdr->obsnchan = strtoul(hdr+i+9, &endptr, 10);
+//         printf("OBSNCHAN: %dd\n", raw_hdr->obsnchan);
+//     }
+//     // If we found the "END " record
+//     else if(!strncmp(hdr+i, "END ", 4)) {
+//       // Move to just after END record
+//       i += 80;
+//       // Account for DirectIO
+//       if(raw_hdr->directio) {
+//         i += (MAX_RAW_HDR_SIZE - i) % 512;
+//       }
+//       printf("hdr_size: found END at record %ld\n", i);
+//       return i;
+//     }
     
-  }
-  return 0;
-}
+//   }
+//   return 0;
+// }
 
 // strips the user-supplied filename 
 char *trim_filename(char *str)
