@@ -64,7 +64,7 @@ int main(int argc, char *argv[]){
         }
     }
     // Check for correct flagging when DDC-ing
-    if(ddc_flag && (ddc_chan < 0 || ddc_lo_freq <= 0)){
+    if(ddc_flag && (ddc_chan < 0 || ddc_lo_freq == 0)){
       printf("Error: Need to give channel and LO to DDC.\n");
       usage();
       return -1;

@@ -236,14 +236,33 @@ void create_polarized_power(int fd, rawspec_raw_hdr_t *raw_file){
     cudaFreeHost(h_polarized_block);
 }
 
-__global__ void ddc_channel(int8_t *raw_chan, int *ddc_chan, unsigned int raw_chan_size, int block){
+__global__ void ddc_channel(int8_t *raw_chan, double *ddc_chan, unsigned int raw_chan_size, int block, double t_per_samp, double lo_freq){
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.x)  * 4;
+    double time = t_per_samp * (i / 4 + block * raw_chan_size);
+
+    double cosine = cospi(2 * time * lo_freq * 1000000);
+    double sine   = sinpi(2 * time * lo_freq * 1000000);
+
+    double ddc_x_real = cosine * raw_chan[i];
+    double ddc_x_imag = sine   * raw_chan[i+1];
+    double ddc_y_real = cosine * raw_chan[i+2];
+    double ddc_y_imag = sine   * raw_chan[i+3];
 
 
     if(i == TEST_INDEX){
-        printf("In Kernel!\tIndex: %ld  (%d, %d), (%d, %d)\n\n", 
-                i, raw_chan[i], raw_chan[i+1], raw_chan[i+2], raw_chan[i+3]);
+        printf("In Kernel!\tBlock: %d\tIndex: %ld\tTime: %f\tLO Freq: %f MHz\n", 
+                block, i, time, lo_freq);
+        printf("Cosine: %f\tSine: %f\n", cosine, sine);
+        printf("\t  (x_real,  \tx_imag),  (y_real,  \ty_imag)\n");
+        printf("Raw Data: (%9d, %9d), (%8d, %9d)\n", raw_chan[i], raw_chan[i+1], raw_chan[i+2], raw_chan[i+3]);
+        printf("DDC Data: (%f, %f), (%f, %f)\n\n", ddc_x_real, ddc_x_imag, ddc_y_real, ddc_y_imag);
     }
+
+    
+    ddc_chan[i]   = ddc_x_real;
+    ddc_chan[i+1] = ddc_x_imag;
+    ddc_chan[i+2] = ddc_y_real;
+    ddc_chan[i+3] = ddc_y_imag;    
 }
 
 void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_freq){
@@ -251,16 +270,16 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
     size_t bytes_to_chan;
     size_t bytes_read;
     size_t raw_chan_size   = raw_file->blocsize / raw_file->obsnchan;
-    size_t ddc_chan_size   = raw_file->blocsize / raw_file->obsnchan * sizeof(int);
+    size_t ddc_chan_size   = raw_file->blocsize / raw_file->obsnchan * sizeof(double);
     
     unsigned long grid_dim_x = (int) ceil(raw_chan_size / MAX_THREADS_PER_BLOCK / 4);
     dim3 griddim(grid_dim_x, 1, 1);
     dim3 blockdim(MAX_THREADS_PER_BLOCK, 1, 1);
 
     int8_t *h_raw_chan;
-    int    *h_ddc_chan;
+    double *h_ddc_chan;
     int8_t *d_raw_chan;
-    int    *d_ddc_chan;
+    double *d_ddc_chan;
 
     bytes_to_chan = raw_file->hdr_size + chan * raw_chan_size;
     printf("Raw chan size: %ld\n", raw_chan_size);
@@ -286,8 +305,38 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
         }
         print_complex_data(h_raw_chan, 1000*4);
 
-        ddc_channel<<<1,1>>> (d_raw_chan, d_ddc_chan, raw_chan_size, block);
+        cudaMemcpy(d_raw_chan, h_raw_chan, raw_chan_size, cudaMemcpyHostToDevice);
+            printf("CudaMemcpy:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
+        ddc_channel<<<griddim, blockdim>>> (d_raw_chan, d_ddc_chan, raw_chan_size, block, raw_file->tbin, lo_freq);
+            printf("Kernel launch:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+
+        cudaDeviceSynchronize();
+            printf("cuda device sync:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+
+        cudaMemcpy(h_ddc_chan, d_ddc_chan, ddc_chan_size, cudaMemcpyDeviceToHost);
+            printf("cudamemcpy:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+
+
+        char *save_block_append = (char *) malloc(50);
+        if(sprintf(save_block_append, "_block%03d_chan%05d_ddc.dat", block, chan) < 0){
+            printf("Error creating save_filename. Couldn't save file.");
+        }
+        else {
+            char *save_filename = (char *) malloc(70);
+            strcpy(save_filename, raw_file->trimmed_filename);
+            strcat(save_filename, save_block_append);
+
+            FILE *f = fopen(save_filename, "wb");
+            int status = fwrite(h_ddc_chan, sizeof(double), raw_chan_size, f);
+            if(!status){
+                perror("Error writing array to file!");
+            }
+            printf("Num Elements written: %d\n", status);
+            fclose(f);
+            free(save_filename);
+        }
+        free(save_block_append);
     }
 
     cudaFree(d_raw_chan);

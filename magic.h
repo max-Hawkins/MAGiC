@@ -8,7 +8,7 @@
 #define MAX_RAW_HDR_SIZE (25600) // From rawspec - TODO: Check to see if this large of size is needed
 #define MAX_CHUNKSIZE (5368709120 / 2.5) // set so that too much memory isn't pinned
 #define BYTES_PER_GB (1073741824)
-#define TEST_INDEX (10000) // Index to compare computed results
+#define TEST_INDEX (4000) // Index to compare computed results
 
 typedef struct {
   char * filename;
