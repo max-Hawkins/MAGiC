@@ -238,7 +238,7 @@ void create_polarized_power(int fd, rawspec_raw_hdr_t *raw_file){
 
 __global__ void ddc_channel(int8_t *raw_chan, double *ddc_chan, unsigned int raw_chan_size, int block, double t_per_samp, double lo_freq){
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.x)  * 4;
-    double time = t_per_samp * (i / 4 + block * raw_chan_size);
+    double time = t_per_samp * (i / 4 + block * raw_chan_size / 4);
 
     double cosine = cospi(2 * time * lo_freq * 1000000);
     double sine   = sinpi(2 * time * lo_freq * 1000000);
