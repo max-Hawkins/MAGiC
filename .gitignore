@@ -6,3 +6,4 @@ flagged/
 *.txt
 *.dat
 *.ipynb*
+*.raw

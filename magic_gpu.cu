@@ -236,7 +236,7 @@ void create_polarized_power(int fd, rawspec_raw_hdr_t *raw_file){
     cudaFreeHost(h_polarized_block);
 }
 
-__global__ void ddc_channel(int8_t *raw_chan, double *ddc_chan, unsigned int raw_chan_size, int block, double t_per_samp, double lo_freq){
+__global__ void ddc_channel(int8_t *raw_chan, int8_t *ddc_chan, unsigned int raw_chan_size, int block, double t_per_samp, double lo_freq){
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.x)  * 4;
     double time = t_per_samp * (i + block * raw_chan_size) / 4;
 
@@ -256,22 +256,23 @@ __global__ void ddc_channel(int8_t *raw_chan, double *ddc_chan, unsigned int raw
         printf("\t  (x_real,  \tx_imag),  (y_real,  \ty_imag)\n");
         printf("Raw Data: (%9d, %9d), (%8d, %9d)\n", raw_chan[i], raw_chan[i+1], raw_chan[i+2], raw_chan[i+3]);
         printf("DDC Data: (%f, %f), (%f, %f)\n\n", ddc_x_real, ddc_x_imag, ddc_y_real, ddc_y_imag);
+        printf("DDC Int:  (%d, %d), (%d, %d)\n\n", (int8_t) ddc_x_real, (int8_t) ddc_x_imag, (int8_t) ddc_y_real, (int8_t) ddc_y_imag);
     }
 
     
-    ddc_chan[i]   = ddc_x_real;
-    ddc_chan[i+1] = ddc_x_imag;
-    ddc_chan[i+2] = ddc_y_real;
-    ddc_chan[i+3] = ddc_y_imag;    
+    ddc_chan[i]   = (int8_t) ddc_x_real;
+    ddc_chan[i+1] = (int8_t) ddc_x_imag;
+    ddc_chan[i+2] = (int8_t) ddc_y_real;
+    ddc_chan[i+3] = (int8_t) ddc_y_imag;    
 }
 
-void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_freq){
-    off_t pos = lseek(fd, 0, SEEK_SET);
+void ddc_coarse_chan(int in_raw_file, rawspec_raw_hdr_t *raw_file, int chan, double lo_freq){
+    off_t pos = lseek(in_raw_file, 0, SEEK_SET);
     size_t bytes_to_chan;
     size_t bytes_to_next_bloc_chan;
     size_t bytes_read;
     size_t raw_chan_size   = raw_file->blocsize / raw_file->obsnchan;
-    size_t ddc_chan_size   = raw_file->blocsize / raw_file->obsnchan * sizeof(double);
+    size_t ddc_chan_size   = raw_file->blocsize / raw_file->obsnchan;
 
     int status;
     char *save_block_append = (char *) malloc(50);
@@ -284,16 +285,26 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
         strcpy(save_filename, raw_file->trimmed_filename);
         strcat(save_filename, save_block_append);
     }
-    FILE *out_file = fopen(save_filename,"wb");
-    
+    // Open output channel array and raw file
+    FILE *out_array = fopen(save_filename,"wb");
+    if(out_array == null){
+        perror("Error opening out array.\n");
+        return;
+    }
+    FILE *out_raw_file = fopen("../test_guppi.raw","r+b");
+    if(out_raw_file == null){
+        perror("Error opening out raw file.\n");
+        return;
+    }
+    // Kernel execution thread arrangement
     unsigned long grid_dim_x = (int) ceil(raw_chan_size / MAX_THREADS_PER_BLOCK / 4);
     dim3 griddim(grid_dim_x, 1, 1);
     dim3 blockdim(MAX_THREADS_PER_BLOCK, 1, 1);
 
     int8_t *h_raw_chan;
-    double *h_ddc_chan;
+    int8_t *h_ddc_chan;
     int8_t *d_raw_chan;
-    double *d_ddc_chan;
+    int8_t *d_ddc_chan;
 
     bytes_to_chan = raw_file->hdr_size + chan * raw_chan_size;
     bytes_to_next_bloc_chan = raw_file->hdr_size + ((raw_file->obsnchan - chan - 1) * raw_chan_size) + chan * raw_chan_size;
@@ -310,11 +321,13 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
     cudaMalloc(&d_ddc_chan, ddc_chan_size);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
-    pos = lseek(fd, bytes_to_chan, SEEK_CUR);
+    
+    pos = lseek(in_raw_file, bytes_to_chan, SEEK_CUR);
+    pos = fseek(out_raw_file, bytes_to_chan, SEEK_SET);
 
     for(int block = 0; block < raw_file->nblocks; ++block){
         
-        bytes_read = read(fd, h_raw_chan, raw_chan_size);
+        bytes_read = read(in_raw_file, h_raw_chan, raw_chan_size);
         if(bytes_read != raw_chan_size){
             printf("Error reading GUPPI file. Bytes read: %ld", bytes_read);
             return;
@@ -335,23 +348,31 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
 
 
         
-        status = fwrite(h_ddc_chan, sizeof(double), raw_chan_size, out_file);
+        status = fwrite(h_ddc_chan, sizeof(int8_t), raw_chan_size, out_array);
         if(!status){
-            perror("Error writing array to file!");
+            perror("Error writing array to array!");
+        }
+        printf("Num Elements written: %d\n", status);
+
+        status = fwrite(h_ddc_chan, sizeof(int8_t), raw_chan_size, out_raw_file);
+        if(!status){
+            perror("Error writing array to out raw file!");
         }
         printf("Num Elements written: %d\n", status);
         
-
-        pos = lseek(fd, bytes_to_next_bloc_chan, SEEK_CUR);
+        pos = lseek(in_raw_file, bytes_to_next_bloc_chan, SEEK_CUR);
+        pos = fseek(out_raw_file, pos, SEEK_SET);
     }
 
-    fclose(out_file);
+    fclose(out_array);
+    fclose(out_array);
+    free(save_filename);
+    free(save_block_append);
+
     cudaFree(d_raw_chan);
     cudaFree(d_ddc_chan);
     cudaFreeHost(h_raw_chan);
     cudaFreeHost(h_ddc_chan);
-    free(save_filename);
-    free(save_block_append);
 }
 
 
