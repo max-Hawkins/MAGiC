@@ -238,15 +238,15 @@ void create_polarized_power(int fd, rawspec_raw_hdr_t *raw_file){
 
 __global__ void ddc_channel(int8_t *raw_chan, double *ddc_chan, unsigned int raw_chan_size, int block, double t_per_samp, double lo_freq){
     unsigned long i = (blockIdx.x * (blockDim.x * blockDim.y) + threadIdx.x)  * 4;
-    double time = t_per_samp * (i / 4 + block * raw_chan_size / 4);
+    double time = t_per_samp * (i + block * raw_chan_size) / 4;
 
     double cosine = cospi(2 * time * lo_freq * 1000000);
     double sine   = sinpi(2 * time * lo_freq * 1000000);
 
-    double ddc_x_real = cosine * raw_chan[i];
-    double ddc_x_imag = sine   * raw_chan[i+1];
-    double ddc_y_real = cosine * raw_chan[i+2];
-    double ddc_y_imag = sine   * raw_chan[i+3];
+    double ddc_x_real = cosine * raw_chan[i]   - sine * raw_chan[i+1];  
+    double ddc_x_imag = cosine * raw_chan[i+1] + sine * raw_chan[i];
+    double ddc_y_real = cosine * raw_chan[i+2] - sine * raw_chan[i+3];
+    double ddc_y_imag = cosine * raw_chan[i+3] + sine * raw_chan[i+2];
 
 
     if(i == TEST_INDEX){
@@ -268,9 +268,23 @@ __global__ void ddc_channel(int8_t *raw_chan, double *ddc_chan, unsigned int raw
 void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_freq){
     off_t pos = lseek(fd, 0, SEEK_SET);
     size_t bytes_to_chan;
+    size_t bytes_to_next_bloc_chan;
     size_t bytes_read;
     size_t raw_chan_size   = raw_file->blocsize / raw_file->obsnchan;
     size_t ddc_chan_size   = raw_file->blocsize / raw_file->obsnchan * sizeof(double);
+
+    int status;
+    char *save_block_append = (char *) malloc(50);
+    char *save_filename = (char *) malloc(70);
+    if(sprintf(save_block_append, "_chan%05d_ddc.dat", chan) < 0){
+        printf("Error creating save_filename. Couldn't save file.");
+        return;
+    }
+    else {
+        strcpy(save_filename, raw_file->trimmed_filename);
+        strcat(save_filename, save_block_append);
+    }
+    FILE *out_file = fopen(save_filename,"wb");
     
     unsigned long grid_dim_x = (int) ceil(raw_chan_size / MAX_THREADS_PER_BLOCK / 4);
     dim3 griddim(grid_dim_x, 1, 1);
@@ -282,8 +296,10 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
     double *d_ddc_chan;
 
     bytes_to_chan = raw_file->hdr_size + chan * raw_chan_size;
+    bytes_to_next_bloc_chan = raw_file->hdr_size + ((raw_file->obsnchan - chan - 1) * raw_chan_size) + chan * raw_chan_size;
     printf("Raw chan size: %ld\n", raw_chan_size);
     printf("bytes to chan: %ld\n", bytes_to_chan);
+    printf("bytes to next bloc chan: %ld\n", bytes_to_next_bloc_chan);
 
     cudaHostAlloc(&h_raw_chan, raw_chan_size, cudaHostAllocDefault);
         printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
@@ -296,7 +312,7 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
 
     pos = lseek(fd, bytes_to_chan, SEEK_CUR);
 
-    for(int block = 0; block < 1; ++block){
+    for(int block = 0; block < raw_file->nblocks; ++block){
         
         bytes_read = read(fd, h_raw_chan, raw_chan_size);
         if(bytes_read != raw_chan_size){
@@ -318,31 +334,24 @@ void ddc_coarse_chan(int fd, rawspec_raw_hdr_t *raw_file, int chan, double lo_fr
             printf("cudamemcpy:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
 
-        char *save_block_append = (char *) malloc(50);
-        if(sprintf(save_block_append, "_block%03d_chan%05d_ddc.dat", block, chan) < 0){
-            printf("Error creating save_filename. Couldn't save file.");
+        
+        status = fwrite(h_ddc_chan, sizeof(double), raw_chan_size, out_file);
+        if(!status){
+            perror("Error writing array to file!");
         }
-        else {
-            char *save_filename = (char *) malloc(70);
-            strcpy(save_filename, raw_file->trimmed_filename);
-            strcat(save_filename, save_block_append);
+        printf("Num Elements written: %d\n", status);
+        
 
-            FILE *f = fopen(save_filename, "wb");
-            int status = fwrite(h_ddc_chan, sizeof(double), raw_chan_size, f);
-            if(!status){
-                perror("Error writing array to file!");
-            }
-            printf("Num Elements written: %d\n", status);
-            fclose(f);
-            free(save_filename);
-        }
-        free(save_block_append);
+        pos = lseek(fd, bytes_to_next_bloc_chan, SEEK_CUR);
     }
 
+    fclose(out_file);
     cudaFree(d_raw_chan);
     cudaFree(d_ddc_chan);
     cudaFreeHost(h_raw_chan);
     cudaFreeHost(h_ddc_chan);
+    free(save_filename);
+    free(save_block_append);
 }
 
 

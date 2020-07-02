@@ -95,15 +95,18 @@ int main(int argc, char *argv[]){
     // Initializes cuda context and show GPU names 
     get_device_info();
 
+    // Set filesize and nblocks
+    size_t filesize = lseek(fd, 0, SEEK_END);
+    printf("file size: %ld\n", filesize);
+    rawspec_hdr.nblocks = filesize / (rawspec_hdr.hdr_size + rawspec_hdr.blocsize);
+    printf("Nblocks: %d\n", rawspec_hdr.nblocks);
+
     pos = lseek(fd, 0, SEEK_SET);
     // // Read in header data and parse it
     // raw_file.hdr_size = read(fd, buffer, MAX_RAW_HDR_SIZE);
     // raw_file.hdr_size = parse_raw_header(buffer, sizeof(buffer), &raw_file);
 
-    // raw_file.filesize = lseek(fd, 0, SEEK_END);
-    // printf("file size: %ld\n", raw_file.filesize);
-    // raw_file.nblocks = raw_file.filesize / (raw_file.hdr_size + raw_file.blocsize);
-    // printf("Nblocks: %d\n", raw_file.nblocks);
+    
     
     if(linear_pol_flag){
       printf("\n---Creating linearly polarized power spectrum.\n");
