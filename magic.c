@@ -31,6 +31,10 @@ int main(int argc, char *argv[]){
       return -1;
     }
     
+    // Account for flagless filename argument
+      if(optind < argc){
+        optind += 1;
+      }
     // Process command line arguments - TODO: long opts
     while ((c = getopt (argc, argv, "hpld:f:")) != -1){
       switch (c)
@@ -59,10 +63,7 @@ int main(int argc, char *argv[]){
           return 1;
           break;
         }
-        // Account for flagless filename argument
-      if(optind < argc){
-        optind += 1;
-      }
+      
     }
     // Check for correct flagging when DDC-ing
     if(ddc_flag && (ddc_chan < 0 || ddc_lo_freq == 0)){
