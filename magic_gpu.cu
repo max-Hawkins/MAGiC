@@ -287,12 +287,12 @@ void ddc_coarse_chan(int in_raw_file, rawspec_raw_hdr_t *raw_file, int chan, dou
     }
     // Open output channel array and raw file
     FILE *out_array = fopen(save_filename,"wb");
-    if(out_array == null){
+    if(out_array == NULL){
         perror("Error opening out array.\n");
         return;
     }
     FILE *out_raw_file = fopen("../test_guppi.raw","r+b");
-    if(out_raw_file == null){
+    if(out_raw_file == NULL){
         perror("Error opening out raw file.\n");
         return;
     }
