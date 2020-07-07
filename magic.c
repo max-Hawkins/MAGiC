@@ -18,6 +18,7 @@ int main(int argc, char *argv[]){
     int ddc_flag = 0;
     int ddc_chan = -1;
     double ddc_lo_freq = 0;
+    int num_streams = 1;
 
     int fd;
     size_t pos;
@@ -25,18 +26,14 @@ int main(int argc, char *argv[]){
     int num_cuda_streams = 1;
     long PAGESIZE = sysconf(_SC_PAGESIZE); // Get page size for reading later
 
-    if(!argv[1]){
-      printf("Please input a GUPPI file to process.\n");
-      usage();
-      return -1;
-    }
     
     // Account for flagless filename argument
-      if(optind < argc){
+    if(optind < argc){
         optind += 1;
-      }
+    }
+    
     // Process command line arguments - TODO: long opts
-    while ((c = getopt (argc, argv, "hpld:f:")) != -1){
+    while ((c = getopt (argc, argv, "hpld:f:s:")) != -1){
       switch (c)
         {
         case 'h':
@@ -56,6 +53,9 @@ int main(int argc, char *argv[]){
         case 'f':
           ddc_lo_freq = strtod(optarg, NULL);
           break;
+        case 's':
+          num_streams = atoi(optarg);
+          break;
         case '?':
         default:
           printf("Error parsing user input.\n\n");
@@ -64,6 +64,16 @@ int main(int argc, char *argv[]){
           break;
         }
       
+    }
+    //printf("after args: %s", argv[optind]);
+    
+
+    
+    
+    if(!argv[1]){
+      printf("Please input a GUPPI file to process.\n");
+      usage();
+      return -1;
     }
     // Check for correct flagging when DDC-ing
     if(ddc_flag && (ddc_chan < 0 || ddc_lo_freq == 0)){
@@ -117,7 +127,7 @@ int main(int argc, char *argv[]){
 
     if(power_flag){
       printf("\n---Creating power spectrum.\n");
-      create_power_spectrum(fd, &rawspec_hdr, 1);
+      create_power_spectrum(fd, &rawspec_hdr, num_streams);
     }
 
     if(ddc_flag){
@@ -199,8 +209,9 @@ void usage() {
     "Options:\n"
     "  -p,                Calculates and saves the power spectrum\n"
     "  -l,                Calculates and saves the linearly polarized power\n"
-    "  -d [coarse_chan],  Digitally down-convert coarse channel (see -f flag)"
-    "  -f [i_frequency],  Mix selected channel with i_frequency in MHz"
+    "  -d [coarse_chan],  Digitally down-convert coarse channel (see -f flag)\n"
+    "  -f [i_frequency],  Mix selected channel with i_frequency in MHz\n"
+    "  -s [num_streams],  Number of CUDA streams to run kernels with\n"
     "\n"
     "  -h,                Show this message\n"
   );
