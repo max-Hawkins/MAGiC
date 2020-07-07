@@ -10,6 +10,16 @@
 #define BYTES_PER_GB (1073741824)
 #define TEST_INDEX (4000) // Index to compare computed results
 
+#define power_filename_append = "power"
+#define pol_power_filename_append = "pol_power"
+
+
+typedef struct callBackData_t{
+    int stream_num;
+    int cur_block;
+    int8_t *h_power_block;
+} callBackData_t;
+
 typedef struct {
   char * filename;
   char * trimmed_filename;
