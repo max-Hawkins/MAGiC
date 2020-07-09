@@ -65,7 +65,7 @@ void create_power_spectrum(int fd, rawspec_raw_hdr_t *raw_file, int num_streams)
 
     ssize_t bytes_read;
 
-    unsigned long grid_dim_x = raw_file->blocsize / (MAX_THREADS_PER_BLOCK);
+    unsigned long grid_dim_x = raw_file->blocsize / MAX_THREADS_PER_BLOCK / 4;
     dim3 griddim(grid_dim_x, 1, 1);
     dim3 blockdim(MAX_THREADS_PER_BLOCK / raw_file->obsnchan, raw_file->obsnchan);
 
@@ -113,25 +113,25 @@ void create_power_spectrum(int fd, rawspec_raw_hdr_t *raw_file, int num_streams)
         }
 
         print_complex_data(h_complex_block, raw_file->hdr_size + TEST_INDEX);
-        //printf("Test Data: %d\n", h_complex_block[raw_file->hdr_size + TEST_INDEX]);
 
         for(int i = 0; i <num_streams; i++){
             
             streams_callBackData[i].cur_block = block + i;
 
+            //TODO: Figure out why illegal memory error is happening!
             size_t stream_bloc_loc = (raw_file->hdr_size + raw_file->blocsize) * i + raw_file->hdr_size;
             size_t stream_pow_loc  = power_block_size / num_streams * i;
 
-            printf("Complex loc: %ld\tPower loc: %ld", stream_bloc_loc, stream_pow_loc);
+            printf("stream : %d\tComplex loc: %ld\tPower loc: %ld\n", i, stream_bloc_loc, stream_pow_loc);
 
             cudaMemcpyAsync(&d_complex_block[stream_bloc_loc], &h_complex_block[stream_bloc_loc], raw_file->blocsize, cudaMemcpyHostToDevice, streams[i]);
-                printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+                printf("CudaMemCpy_H2D:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
             power_spectrum<<<griddim, blockdim, 0, streams[i]>>>(&d_complex_block[stream_bloc_loc], &d_power_block[stream_pow_loc], raw_file->blocsize);
-                printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+                printf("CudaKernelLaunch:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
             cudaMemcpyAsync(&h_power_block[stream_pow_loc], &d_power_block[stream_pow_loc], raw_file->blocsize / 4 * sizeof(uint16_t), cudaMemcpyDeviceToHost, streams[i]);
-                printf("CudaMalloc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
+                printf("CudaMemcpy_D2H:\t%s\n", cudaGetErrorString(cudaGetLastError()));
 
             cudaLaunchHostFunc(streams[i], callBack_fn, &streams_callBackData[i]);
                 printf("CudaLaunchHostFunc:\t%s\n", cudaGetErrorString(cudaGetLastError()));
