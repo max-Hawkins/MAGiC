@@ -38,8 +38,6 @@ module kurtosis_module
         s = stdm(h_power, u)
         s4 = s ^ 4
 
-        
-
         # if time
         #     print("Mean")
         #     @btime u = mean(h_power)
@@ -58,10 +56,8 @@ module kurtosis_module
     end
 
     function main()
-        
         print("N: ", sampPerChan * nChan, "\n")
         print("Mean")
-        
 
         print("Map function")
         @btime k = map(x->(x .- u) .^ 4 /  s .^ 4, array)
