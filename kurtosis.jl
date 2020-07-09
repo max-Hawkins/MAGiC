@@ -55,6 +55,22 @@ module kurtosis_module
         return d_power, d_kurt, u, s4
     end
 
+    function kurtosis_demo()
+        N = 10000
+        rand_a = rand(N,N)
+        randn_a = randn(N,N)
+        
+
+        rand_k = [mean(kurtosis(rand_a[i,:])) for i=1:N]
+        randn_k = [mean(kurtosis(randn_a[i,:])) for i=1:N]
+        typeof(rand_k)
+
+        println("Kurtosis values")
+        println(mean(rand_k))
+        println(mean(randn_k))
+        
+    end
+
     function main()
         print("N: ", sampPerChan * nChan, "\n")
         print("Mean")
