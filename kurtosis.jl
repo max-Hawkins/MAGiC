@@ -2,6 +2,8 @@ module kurtosis_module
     using Statistics
     using BenchmarkTools
     using CUDA
+    using Plots
+    using Random
 
     function kurtosis(a)
         u = mean(a)
@@ -57,17 +59,28 @@ module kurtosis_module
 
     function kurtosis_demo()
         N = 10000
+        x = 1:N
         rand_a = rand(N,N)
         randn_a = randn(N,N)
+        rande_a = randexp(N,N)
         
 
         rand_k = [mean(kurtosis(rand_a[i,:])) for i=1:N]
         randn_k = [mean(kurtosis(randn_a[i,:])) for i=1:N]
-        typeof(rand_k)
+        rande_k = [mean(kurtosis(rande_a[i,:])) for i=1:N]
 
-        println("Kurtosis values")
-        println(mean(rand_k))
-        println(mean(randn_k))
+        p_rand_k = plot(x, rand_k, title="Kurtosis Values (N = $(N))", labels="Uniform ($(mean(rand_k)))")
+        plot!(x, randn_k, title="Kurtosis Values", labels="Normal ($(mean(randn_k)))")
+        plot!(x, rande_k, title="Kurtosis Values", labels="Exponential ($(mean(rande_k)))")
+
+        p_rand_h = histogram(vec(rand_a), title="Uniform Array Histogram")
+        p_randn_h = histogram(vec(randn_a), title="Normal Array Histogram")
+        p_rande_h = histogram(vec(rande_a), title="Expo Array Histogram")
+        p = plot(p_randn_h, p_rand_h, p_rande_h, layout=(3,1), legend=false)
+        display(p)
+        display(p_rand_k)
+        savefig(p, "array_histograms.png")
+        savefig(p_rand_k, "kurtosis_plots.png")
         
     end
 
