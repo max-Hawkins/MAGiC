@@ -21,6 +21,10 @@ module kurtosis_module
         return
     end
 
+    function power_spec_gpu(complex_block)
+
+    end
+
     function bench_kurtosis_gpu()
         d_pow, d_kurt, u, s4 = create_arrays()
         CUDA.@sync begin
@@ -72,6 +76,10 @@ module kurtosis_module
         p_rand_k = plot(x, rand_k, title="Kurtosis Values (N = $(N))", labels="Uniform ($(mean(rand_k)))")
         plot!(x, randn_k, title="Kurtosis Values", labels="Normal ($(mean(randn_k)))")
         plot!(x, rande_k, title="Kurtosis Values", labels="Exponential ($(mean(rande_k)))")
+
+        println("Uniform kurtosis std: $(std(rand_k))")
+        println("Normal kurtosis std:  $(std(randn_k))")
+        println("Expo kurtosis std:    $(std(rande_k))")
 
         p_rand_h = histogram(vec(rand_a), title="Uniform Array Histogram")
         p_randn_h = histogram(vec(randn_a), title="Normal Array Histogram")
