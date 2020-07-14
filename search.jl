@@ -10,18 +10,42 @@ module search_module
     const global MAX_THREADS_PER_BLOCK = 1024
 
     function load_guppi(fn)
+        raw = open(fn)
+        rh = GuppiRaw.Header()
+        return raw, rh
+    end
 
+    function read_block_gr(raw, rh)
+        read!(raw, rh)
+        data = Array(rh)
+        read!(raw, data)
+        return data
+    end
 
-    function kurtosis(a)
-        u = mean(a)
-        s = stdm(a, u)
-        k = map(x->(x .- u) .^ 4 /  s .^ 4, a)
-        return k
+    function power_spec(complex_block, sum_pols=true)
+        complex_block16 = convert(Array{Complex{Int16}}, complex_block)
+        power_block = map(x->real(x)^2 + imag(x)^2, complex_block16)
+
+        if sum_pols && size(complex_block, 1) == 2
+            power_block = sum(power_block[:,:,:], dims=1)
+        end
+        return power_block
+    end
+
+    function kurtosis(power_block)
+        println("Calculating kurtosis - using CPU")
+        u = mean(power_block)
+        s4 = stdm(power_block, u) ^ 4
+        kurtosis_block = map(x->(x .- u) .^ 4 /  s4, power_block)
+        return kurtosis_block
     end
 
     # TODO: Put mean and std^4 in shared memory, figure out exponent problem
-    function kurtosis_gpu(power_block, kurt_block, mean, std4)
+    function kurtosis_kernel(power_block, kurt_block, mean, std4, num_elements)
         i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+        if i > num_elements
+            return
+        end
         m_diff = power_block[i] - mean
         kurt = m_diff * m_diff * m_diff * m_diff / std4
         kurt_block[i] = kurt
@@ -73,12 +97,28 @@ module search_module
         return h_power_block
     end
 
-    function bench_kurtosis_gpu()
-        d_pow, d_kurt, u, s4 = create_arrays()
+    # TODO: Include mean and std calculations into kernel, create indexing without flattening
+    function kurtosis_gpu(h_power_block)
+        println("Calculating kurtosis - using GPU")
+        h_power_size = size(h_power_block)
+        nblocks = Int64(ceil(length(h_power_block) / MAX_THREADS_PER_BLOCK))
+        h_power_block = reshape(h_power_block, (:))
+
+        d_power_block = CuArray(h_power_block)
+        h_kurtosis_block = similar(h_power_block, Float32)
+        d_kurtosis_block = CuArray(h_kurtosis_block)
+
+        u = mean(d_power_block)
+        s4 = stdm(d_power_block, u) ^ 4
+
+        println("nblocks: $(nblocks)")
+        
         CUDA.@sync begin
-            @cuda threads=(1024) blocks=(32288) kurtosis_gpu(d_pow, d_kurt, u, s4)
+            @cuda threads=(MAX_THREADS_PER_BLOCK, 1, 1) blocks=(nblocks, 1, 1) kurtosis_kernel(d_power_block, d_kurtosis_block, u, s4, length(h_power_block))
         end
-        h_kurt = Array(d_kurt)
+        h_kurtosis_block = Array(d_kurtosis_block)
+        h_kurtosis_block = reshape(h_kurtosis_block, h_power_size)
+        return h_kurtosis_block
     end
 
     function create_arrays()
