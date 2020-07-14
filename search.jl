@@ -23,8 +23,7 @@ module search_module
     end
 
     function power_spec(complex_block, sum_pols=true)
-        complex_block16 = convert(Array{Complex{Int16}}, complex_block)
-        power_block = map(x->real(x)^2 + imag(x)^2, complex_block16)
+        power_block = abs2.(Array{Complex{Int16}}(complex_block))
 
         if sum_pols && size(complex_block, 1) == 2
             power_block = sum(power_block[:,:,:], dims=1)
@@ -32,11 +31,26 @@ module search_module
         return power_block
     end
 
-    function kurtosis(power_block)
-        println("Calculating kurtosis - using CPU")
-        u = mean(power_block)
-        s4 = stdm(power_block, u) ^ 4
-        kurtosis_block = map(x->(x .- u) .^ 4 /  s4, power_block)
+    function kurtosis(power_block, by_chan=true)
+        kurtosis_block = Array{Float32}(power_block)
+        if !by_chan
+            println("Calculating kurtosis - using CPU and block statistics")
+            u = mean(power_block)
+            s4 = stdm(power_block, u) ^ 4
+            kurtosis_block = map(x->(x .- u) .^ 4 /  s4, power_block)
+        else
+            # TODO: had issues with mapping optimization, reverted to for loops. Check back later
+            println("Calculating kurtosis by channel - using CPU")
+            for pol = 1:size(power_block, 1)
+
+                u = mean(power_block[pol,:,:], dims = 1)
+                s4 = std(power_block[pol,:,:], dims = 1) .^ 4
+
+                for i = 1:size(power_block, 3)
+                    kurtosis_block[pol, :, i] = map(x->(x .- u[i]) .^ 4 /  s4[i], power_block[pol, :, i])
+                end
+            end
+        end
         return kurtosis_block
     end
 
@@ -85,7 +99,7 @@ module search_module
 
         d_complex_block = CuArray{Int8}(h_complex_block)
 
-        h_power_block = zeros{Float32}(1, nthreads_per_chan, nchan)
+        h_power_block = zeros{Int16}(1, nthreads_per_chan, nchan)
         d_power_block = CuArray(h_power_block)
             
 
@@ -93,7 +107,7 @@ module search_module
             @cuda threads=block_dim blocks=grid_dim power_spec_kernel(d_complex_block, d_power_block, nint)
         end
         
-        h_power_block = Array(d_power_block)
+        h_power_block = Array{Int16}(d_power_block)
         return h_power_block
     end
 
@@ -110,8 +124,6 @@ module search_module
 
         u = mean(d_power_block)
         s4 = stdm(d_power_block, u) ^ 4
-
-        println("nblocks: $(nblocks)")
         
         CUDA.@sync begin
             @cuda threads=(MAX_THREADS_PER_BLOCK, 1, 1) blocks=(nblocks, 1, 1) kurtosis_kernel(d_power_block, d_kurtosis_block, u, s4, length(h_power_block))
