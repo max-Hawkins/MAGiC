@@ -1,4 +1,7 @@
-module search_module
+"""
+Guppi data processing algorithms for energy detection.
+"""
+module search
     using Statistics
     using BenchmarkTools
     using CUDA
@@ -7,14 +10,17 @@ module search_module
     using Main.Blio.GuppiRaw
     using Main.Blio.Filterbank
 
+    "CUDA-defined limit on number of threads per block." #TODO: See if 2080Ti is different
     const global MAX_THREADS_PER_BLOCK = 1024
 
+    "Load a Guppi RAW file and return the file and header variables."
     function load_guppi(fn)
         raw = open(fn)
         rh = GuppiRaw.Header()
         return raw, rh
     end
 
+    "Read in the next Guppi block header and return the corresponding block data."
     function read_block_gr(raw, rh)
         read!(raw, rh)
         data = Array(rh)
@@ -22,6 +28,9 @@ module search_module
         return data
     end
 
+    "Compute the power of complex voltage data and return the spectrogram.
+        If sum_pols is true and the complex data is polarized, the polarized
+        powers are summed."
     function power_spec(complex_block, sum_pols=true)
         power_block = abs2.(Array{Complex{Int16}}(complex_block))
 
@@ -31,6 +40,9 @@ module search_module
         return power_block
     end
 
+    "Calculate the kurtosis values for each coarse channel in a power spectrum.
+        If by_chan is false, the statistics used when computing the kurtosis
+        are calculated from the entire block of data."
     function kurtosis(power_block, by_chan=true)
         kurtosis_block = Array{Float32}(power_block)
         if !by_chan
@@ -66,11 +78,11 @@ module search_module
         return
     end
 
+
     function power_spec_kernel(complex_block, power_block, nint)
         start_i = ((blockIdx().x - 1) * blockDim().x + threadIdx().x) * nint
 
         @cuprint("$(i)")
-
     end
 
     function power_spec_gpu(h_complex_block, nint)
@@ -112,6 +124,7 @@ module search_module
     end
 
     # TODO: Include mean and std calculations into kernel, create indexing without flattening
+    "Calculate the kurtosis of a power spectrum block using the GPU."
     function kurtosis_gpu(h_power_block)
         println("Calculating kurtosis - using GPU")
         h_power_size = size(h_power_block)
@@ -133,34 +146,7 @@ module search_module
         return h_kurtosis_block
     end
 
-    function create_arrays()
-        sampPerChan = 516608 # number of samples in Voyager 1 guppi raw block
-        nChan = 64
-        N = sampPerChan * nChan
-        h_power = rand(-128 : 127, N)
-        h_power = convert(Array{Int8}, h_power)
-
-        u = mean(h_power)
-        s = stdm(h_power, u)
-        s4 = s ^ 4
-
-        # if time
-        #     print("Mean")
-        #     @btime u = mean(h_power)
-
-        #     print("STD")
-        #     @btime s = std(h_power)
-
-        #     print("STDM")
-        #     @btime sm = stdm(h_power, u)
-        # end
-
-        d_power = CuArray(h_power)
-        d_kurt = CUDA.zeros(N)
-
-        return d_power, d_kurt, u, s4
-    end
-
+    "Create arrays with different distributions and plot the kurtosis values."
     function kurtosis_demo()
         N = 10000
         x = 1:N
@@ -190,18 +176,6 @@ module search_module
         savefig(p, "array_histograms.png")
         savefig(p_rand_k, "kurtosis_plots.png")
         
-    end
-
-    function main()
-        print("N: ", sampPerChan * nChan, "\n")
-        print("Mean")
-
-        print("Map function")
-        @btime k = map(x->(x .- u) .^ 4 /  s .^ 4, array)
-
-        print("kurtosis")
-        @btime kurtosis(array)
-        # print(kurtosis(array))
     end
 
 end
