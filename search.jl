@@ -52,12 +52,18 @@ module search
             for i = 1:size(complex_block, 3)
                 println("Pol $pol Chan $i")
                 pol_complex_chan = complex_block[pol,:,i]
-                real(pol_complex_chan) =  map(x->(x .- real(u[pol,1,i])) .^ 4 /  s4_real[pol,1,i], real(pol_complex_chan))
-                imag(pol_complex_chan) =  map(x->(x .- imag(u[pol,1,i])) .^ 4 /  s4_imag[pol,1,i], imag(pol_complex_chan))
-        
-                println(mean(real(pol_complex_chan)))
-                println(mean(imag(pol_complex_chan)))
-
+                for samp = 1:size(complex_block, 2)
+                    
+                    real(pol_complex_chan) = (pol_complex_chan[pol, samp, i] - u[pol,1,i]) ^ 4 / s4_real[pol,1,i]
+                    imag(pol_complex_chan) = (pol_complex_chan[pol, samp, i] - u[pol,1,i]) ^ 4 / s4_imag[pol,1,i]
+                    
+                    # real(pol_complex_chan) =  map(x->(x .- real(u[pol,1,i])) .^ 4 /  s4_real[pol,1,i], real(pol_complex_chan))
+                    # imag(pol_complex_chan) =  map(x->(x .- imag(u[pol,1,i])) .^ 4 /  s4_imag[pol,1,i], imag(pol_complex_chan))
+            
+                    
+                end
+                real(kurtosis_block) = mean(real(pol_complex_chan))
+                imag(kurtosis_block) = mean(imag(pol_complex_chan))
             end
         end
         return kurtosis_block
