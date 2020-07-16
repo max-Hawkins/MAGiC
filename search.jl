@@ -7,6 +7,7 @@ module search
     using CUDA
     using Plots
     using Random
+    using Printf
     using Main.Blio.GuppiRaw
     using Main.Blio.Filterbank
 
@@ -14,14 +15,14 @@ module search
     const global MAX_THREADS_PER_BLOCK = 1024
 
     "Load a Guppi RAW file and return the file and header variables."
-    function load_guppi(fn)
+    function load_guppi(fn::String)
         raw = open(fn)
         rh = GuppiRaw.Header()
         return raw, rh
     end
 
     "Read in the next Guppi block header and return the corresponding block data."
-    function read_block_gr(raw, rh)
+    function read_block_gr(raw, rh::GuppiRaw.Header)
         read!(raw, rh)
         data = Array(rh)
         read!(raw, data)
@@ -40,6 +41,27 @@ module search
         return power_block
     end
 
+
+    function kurtosis_complex(complex_block, bychan=false)
+        kurtosis_block = Array{Complex{Float32}}(undef, (size(complex_block, 1),1,size(complex_block, 3)))
+        u = mean(complex_block, dims=2)
+        s4_real = std(real(complex_block), dims=2) .^ 4
+        s4_imag = std(imag(complex_block), dims=2) .^ 4
+
+        for pol = 1:size(complex_block, 1)
+            for i = 1:size(complex_block, 3)
+                println("Pol $pol Chan $i")
+                pol_complex_chan = complex_block[pol,:,i]
+                real(pol_complex_chan) =  map(x->(x .- real(u[pol,1,i])) .^ 4 /  s4_real[pol,1,i], real(pol_complex_chan))
+                imag(pol_complex_chan) =  map(x->(x .- imag(u[pol,1,i])) .^ 4 /  s4_imag[pol,1,i], imag(pol_complex_chan))
+        
+                println(mean(real(pol_complex_chan)))
+                println(mean(imag(pol_complex_chan)))
+
+            end
+        end
+        return kurtosis_block
+    end
     "Calculate the kurtosis values for each coarse channel in a power spectrum.
         If by_chan is false, the statistics used when computing the kurtosis
         are calculated from the entire block of data."
@@ -146,36 +168,83 @@ module search
         return h_kurtosis_block
     end
 
-    "Create arrays with different distributions and plot the kurtosis values."
-    function kurtosis_demo()
-        N = 10000
-        x = 1:N
-        rand_a = rand(N,N)
-        randn_a = randn(N,N)
-        rande_a = randexp(N,N)
-        
+    function kurtosis(fn::String)
+        println("Calculating entire Guppi Raw kurtosis")
+        raw, rh = load_guppi(fn)
+        complex_data = read_block_gr(raw, rh)
+        i = 0
+        kurtosis_blocks = zeros(rh.nbins,128)
+        println("Kurtosis block size: $(size(kurtosis_blocks))")
 
-        rand_k = [mean(kurtosis(rand_a[i,:])) for i=1:N]
-        randn_k = [mean(kurtosis(randn_a[i,:])) for i=1:N]
-        rande_k = [mean(kurtosis(rande_a[i,:])) for i=1:N]
+        while complex_data != -1
+            i += 1
+            println("Reading block $i")
+            if i != 1
+                complex_data = read_block_gr(raw, rh)
+            end
+            power_data = power_spec(complex_data)
+            kurtosis
+        end
 
-        p_rand_k = plot(x, rand_k, title="Kurtosis Values (N = $(N))", labels="Uniform ($(mean(rand_k)))")
-        plot!(x, randn_k, title="Kurtosis Values", labels="Normal ($(mean(randn_k)))")
-        plot!(x, rande_k, title="Kurtosis Values", labels="Exponential ($(mean(rande_k)))")
-
-        println("Uniform kurtosis std: $(std(rand_k))")
-        println("Normal kurtosis std:  $(std(randn_k))")
-        println("Expo kurtosis std:    $(std(rande_k))")
-
-        p_rand_h = histogram(vec(rand_a), title="Uniform Array Histogram")
-        p_randn_h = histogram(vec(randn_a), title="Normal Array Histogram")
-        p_rande_h = histogram(vec(rande_a), title="Expo Array Histogram")
-        p = plot(p_randn_h, p_rand_h, p_rande_h, layout=(3,1), legend=false)
-        display(p)
-        display(p_rand_k)
-        savefig(p, "array_histograms.png")
-        savefig(p_rand_k, "kurtosis_plots.png")
-        
     end
 
+    function get_xticks(rh::GuppiRaw.Header, data_length, num_ticks=10)
+        spec_flip = rh.obsbw < 0
+        obsbw = spec_flip ? rh.obsbw : -1 * rh.obsbw
+
+        start_f = rh.obsfreq - 0.5 * obsbw
+        end_f   = rh.obsfreq + 0.5 * obsbw
+        tick_width = obsbw / num_ticks
+        labels = collect(start_f:tick_width:end_f)
+        labels = [ @sprintf("%5.0f",x) for x in labels ]
+        ticks = 0:data_length / num_ticks:data_length
+        println("Ticks: $ticks")
+        return ticks, labels, spec_flip
+    end
+    # Plot and display/save/return t
+    function plot_1d(block_data, rh::GuppiRaw.Header, type::String, disp=true, save=false)
+        gr()
+        # Bandpass plotting
+        if type=="b" || type=="bandpass"
+            title_prefix = "Bandpass"
+            save_prefix = "bandpass"
+            ylab = "Power"
+        # Kurtosis plotting with channel statistics
+        elseif type=="k" || type=="kurtosis"
+            title_prefix = "Kurtosis (chan stats)"
+            save_prefix = "kurtosis_bychan"
+            ylab = "Kurtosis"
+        # Kurtosis plotting with block statistics
+        elseif type=="kb" || type=="kurtosis_block"
+            title_prefix = "Kurtosis (block stats)"
+            save_prefix = "kurtosis_byblock"
+            ylab = "Kurtosis"
+        else
+            println("Please enter a valid plot type string (b, k, or kb)")
+            return nothing
+        end
+        ticks, labels, xinvert = get_xticks(rh, size(block_data,3))
+        println("xflip: $xinvert")
+        
+        p = plot(block_data[1,1,:],
+                title="$title_prefix of $(rh.basename) - Block $(rh.curblock)",
+                legend=false,
+                xlabel="Frequency (MHz)",
+                ylabel=ylab,
+                xticks=(ticks, labels),
+                xflip=xinvert)
+
+        println("p: $p)")
+
+        if disp
+            println("Displaying plot")
+            display(p)
+        end
+        if save
+            save_fn = "$(save_prefix)_$(rh.basename)_block$(lpad(rh.curblock, 3, '0')).png"
+            println("Saveing plot to '$(save_fn)'")
+            savefig(p,save_fn)
+        end
+        return p
+    end
 end
