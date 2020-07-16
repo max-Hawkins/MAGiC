@@ -41,31 +41,46 @@ module search
         return power_block
     end
 
+    function plot_pol_complex(data)
+        pol_plot = plot(real(data[1,1,:]), labels="Pol 1 Real", ylims=(-1,7))
+            plot!(imag(data[1,1,:]), labels="Pol 1 Imag")
+
+            plot!(real(data[2,1,:]), labels="Pol 2 Real")
+            plot!(imag(data[2,1,:]), labels="Pol 2 imag")
+
+        display(pol_plot)
+        return pol_plot
+    end
 
     function kurtosis_complex(complex_block, bychan=false)
         kurtosis_block = Array{Complex{Float32}}(undef, (size(complex_block, 1),1,size(complex_block, 3)))
+
         u = mean(complex_block, dims=2)
         s4_real = std(real(complex_block), dims=2) .^ 4
         s4_imag = std(imag(complex_block), dims=2) .^ 4
 
         for pol = 1:size(complex_block, 1)
+            println("Pol $pol")
             for i = 1:size(complex_block, 3)
-                println("Pol $pol Chan $i")
-                pol_complex_chan = complex_block[pol,:,i]
+                kurtosis_pol = Array{Complex{Float32}}(complex_block[pol,:,i])
+
                 for samp = 1:size(complex_block, 2)
                     
-                    real(pol_complex_chan) = (pol_complex_chan[pol, samp, i] - u[pol,1,i]) ^ 4 / s4_real[pol,1,i]
-                    imag(pol_complex_chan) = (pol_complex_chan[pol, samp, i] - u[pol,1,i]) ^ 4 / s4_imag[pol,1,i]
+                    kurtosis_real = (real(kurtosis_pol[samp]) - u[pol,1,i]) ^ 4 / s4_real[pol,1,i]
+                    kurtosis_imag = (imag(kurtosis_pol[samp]) - u[pol,1,i]) ^ 4 / s4_imag[pol,1,i]
+
+                    kurtosis_pol[samp] = kurtosis_real + (kurtosis_imag)im
                     
                     # real(pol_complex_chan) =  map(x->(x .- real(u[pol,1,i])) .^ 4 /  s4_real[pol,1,i], real(pol_complex_chan))
                     # imag(pol_complex_chan) =  map(x->(x .- imag(u[pol,1,i])) .^ 4 /  s4_imag[pol,1,i], imag(pol_complex_chan))
             
                     
                 end
-                real(kurtosis_block) = mean(real(pol_complex_chan))
-                imag(kurtosis_block) = mean(imag(pol_complex_chan))
+                kurtosis_block[pol,1,i] = mean(real(kurtosis_pol)) + (mean(imag(kurtosis_pol)))im
+                
             end
         end
+
         return kurtosis_block
     end
     "Calculate the kurtosis values for each coarse channel in a power spectrum.
