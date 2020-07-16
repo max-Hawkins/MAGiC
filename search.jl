@@ -29,6 +29,13 @@ module search
         return data
     end
 
+    "Average over nint number of data points along the time axis for GUPPI data."
+    function average(data::Array, nint)
+        # data = reshape(data, (size(data,1), :, size(data,3), nint))
+        # data = mean(data, dims=4)[:,:,:,1]
+        # return data
+    end
+
     "Compute the power of complex voltage data and return the spectrogram.
         If sum_pols is true and the complex data is polarized, the polarized
         powers are summed."
@@ -83,6 +90,8 @@ module search
 
         return kurtosis_block
     end
+
+
     "Calculate the kurtosis values for each coarse channel in a power spectrum.
         If by_chan is false, the statistics used when computing the kurtosis
         are calculated from the entire block of data."
@@ -97,13 +106,16 @@ module search
             # TODO: had issues with mapping optimization, reverted to for loops. Check back later
             println("Calculating kurtosis by channel - using CPU")
             for pol = 1:size(power_block, 1)
-
+                
                 u = mean(power_block[pol,:,:], dims = 1)
                 s4 = std(power_block[pol,:,:], dims = 1) .^ 4
 
-                for i = 1:size(power_block, 3)
-                    kurtosis_block[pol, :, i] = map(x->(x .- u[i]) .^ 4 /  s4[i], power_block[pol, :, i])
-                end
+                kurtosis_block[pol, :, :] = map(x->(x .- u) .^ 4 /  s4, power_block[pol, :, :])
+
+                # for i = 1:size(power_block, 3)
+                #     println("Pol $pol Chan $i")
+                #     kurtosis_block[pol, :, i] = map(x->(x .- u[i]) .^ 4 /  s4[i], power_block[pol, :, i])
+                # end
             end
         end
         return kurtosis_block
@@ -189,23 +201,32 @@ module search
         return h_kurtosis_block
     end
 
+    "Calculate the kurtosis by channel averaged over an entire GUPPI file."
     function kurtosis(fn::String)
         println("Calculating entire Guppi Raw kurtosis")
         raw, rh = load_guppi(fn)
         complex_data = read_block_gr(raw, rh)
         i = 0
-        kurtosis_blocks = zeros(rh.nbins,128)
+        kurtosis_blocks = zeros((size(complex_data, 3),128))
         println("Kurtosis block size: $(size(kurtosis_blocks))")
 
         while complex_data != -1
             i += 1
             println("Reading block $i")
             if i != 1
-                complex_data = read_block_gr(raw, rh)
+                try
+                    complex_data = read_block_gr(raw, rh)
+                catch
+                    println("Error reading next block - skipping.")
+                    break
+                end
             end
             power_data = power_spec(complex_data)
-            kurtosis
+            kurtosis_block = kurtosis(power_data)
+            kurtosis_block = mean(kurtosis_block, dims = 2)
+            kurtosis_blocks[:, i] = kurtosis_block
         end
+        return kurtosis_blocks
 
     end
 
