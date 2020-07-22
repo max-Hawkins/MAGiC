@@ -28,11 +28,25 @@ module search
         return data
     end
 
-    "Average over nint number of data points along the time axis for GUPPI data."
+    "Development function - do not use"
+    function get_test_data(fn::String)
+        raw, rh = search.load_guppi(fn)
+        complex = search.read_block_gr(raw, rh)
+        return complex
+    end
+
+    "Average over nint number of data points along the time axis for GUPPI data.
+        Assumes the time dimension is the second dimension."
     function average(data::Array, nint)
-        # data = reshape(data, (size(data,1), :, size(data,3), nint))
-        # data = mean(data, dims=4)[:,:,:,1]
-        # return data
+        ntime = size(data, 2)
+        if ntime % nint != 0
+            println("Number of time samples is not divisible by nint. Returning original data.")
+            return data
+        end
+
+        data = reshape(data, (size(data,1), nint, Int(ntime / nint), size(data,3)))
+        data = mean(data, dims=2)[:,1,:,:]
+        return data
     end
 
     "Compute the power of complex voltage data and return the spectrogram.
@@ -45,6 +59,8 @@ module search
             println("Using GPU")
             complex_block = CuArray{Complex{Int32}}(complex_block)
             power_block   = CuArray{UInt16}(undef, size(complex_block))            
+        else
+            complex_block = Array{Complex{Int32}}(complex_block)
         end
 
         power_block = abs2.(complex_block)
@@ -63,18 +79,19 @@ module search
         return power_block
     end
 
-    
-    function kurtosis_dave(a::AbstractArray; dims=1)
+    "Calculate population kurtosis taking advantage of Julia broadcasting.
+        Consumes more memory than kurtosis_safe() that uses for loops."
+    function kurtosis(a::Array; dims::Int=2)
         m = mean(a, dims=dims)
         aa = a .- m
         k = mean(aa .^ 4 ) ./ (mean(aa .^ 2, dims=dims) .^ 2)
         return k
     end
 
-    "Calculate the kurtosis values for each coarse channel in a power spectrum.
+    "Calculate the population kurtosis values for each coarse channel in a power spectrum.
         If by_chan is false, the statistics used when computing the kurtosis
         are calculated from the entire block of data."
-    function kurtosis(power_block, by_chan=true)
+    function kurtosis_safe(power_block, by_chan=true)
         kurtosis_block = Array{Float32}(power_block)
         if !by_chan
             println("Calculating kurtosis - using CPU and block statistics")
@@ -121,33 +138,189 @@ module search
         return
     end
 
-    "Development function - do not use"
-    function get_test_data(fn::String)
-        raw, rh = search.load_guppi(fn)
-        complex = search.read_block_gr(raw, rh)
-        return complex
+    # TODO: Include mean and std calculations into kernel, create indexing without flattening
+    "Calculate the kurtosis of a power spectrum block using block statistics and the GPU."
+    function kurtosis_gpu(h_power_block)
+        println("Calculating kurtosis - using GPU")
+        h_power_size = size(h_power_block)
+        nblocks = Int64(ceil(length(h_power_block) / MAX_THREADS_PER_BLOCK))
+        h_power_block = reshape(h_power_block, (:))
+
+        d_power_block = CuArray(h_power_block)
+        h_kurtosis_block = similar(h_power_block, Float32)
+        d_kurtosis_block = CuArray(h_kurtosis_block)
+
+        u = mean(d_power_block)
+        s4 = stdm(d_power_block, u) ^ 4
+        
+        CUDA.@sync begin
+            @cuda threads=(MAX_THREADS_PER_BLOCK, 1, 1) blocks=(nblocks, 1, 1) kurtosis_kernel(d_power_block, d_kurtosis_block, u, s4, length(h_power_block))
+        end
+        h_kurtosis_block = Array(d_kurtosis_block)
+        h_kurtosis_block = reshape(h_kurtosis_block, h_power_size)
+        return h_kurtosis_block
+    end
+
+    "Create the ticks and labels for frequency axes from GUPPI headers"
+    function get_fticks(rh::GuppiRaw.Header, data_length, num_ticks=10)
+        spec_flip = rh.obsbw < 0
+        obsbw = spec_flip ? rh.obsbw : -1 * rh.obsbw
+
+        start_f = rh.obsfreq - 0.5 * obsbw
+        end_f   = rh.obsfreq + 0.5 * obsbw
+        tick_width = obsbw / num_ticks
+        labels = collect(start_f:tick_width:end_f)
+        labels = [ @sprintf("%5.0f",x) for x in labels ]
+        ticks = 0:data_length / num_ticks:data_length
+        return ticks, labels, spec_flip
+    end
+
+    "Create the ticks and labels for time axes from GUPPI headers"
+    function get_tticks(rh::GuppiRaw.Header, data_length, num_blocks=1, num_ticks=5)
+        ntime = rh.blocsize / rh.npol / rh.nbin
+        timespan = num_blocks * rh.tbin * ntime
+        units = "s"
+
+        if timespan < 1
+            timespan /= 1000.0
+            units = "ms"
+        end
+        println("ntime: $ntime  timespan: $timespan  Units: $units")
+
+        tick_width = timespan / num_ticks
+        labels = collect(0:tick_width:timespan)
+        labels = [ @sprintf("%5.3f",x) for x in labels ]
+        ticks = 0:data_length / num_ticks:data_length
+
+        label = "Time ($units)"
+
+        return ticks, labels, label 
+    end
+
+    # Plot and display/save/return t
+    function plot_1d(block_data, rh::GuppiRaw.Header, type::String, disp=true, save=false)
+        gr()
+        show_legend = false
+        num_pols = size(block_data, 1)
+        if num_pols > 1
+            show_legend = true
+        end
+
+        # Bandpass plotting
+        if type=="b" || type=="bandpass"
+            title_prefix = "Bandpass"
+            save_prefix = "bandpass"
+            ylab = "Power"
+        # Kurtosis plotting with channel statistics
+        elseif type=="k" || type=="kurtosis"
+            title_prefix = "Kurtosis (chan stats)"
+            save_prefix = "kurtosis_bychan"
+            ylab = "Kurtosis"
+        # Kurtosis plotting with block statistics
+        elseif type=="kb" || type=="kurtosis_block"
+            title_prefix = "Kurtosis (block stats)"
+            save_prefix = "kurtosis_byblock"
+            ylab = "Kurtosis"
+        else
+            println("Please enter a valid plot type string (b, k, or kb)")
+            return nothing
+        end
+        ticks, labels, xinvert = get_fticks(rh, size(block_data,3))
+        println("xflip: $xinvert")
+        
+        p = plot()
+        for pol = 1:num_pols
+            plot!(p, block_data[pol,1,:],
+                    title="$title_prefix of $(rh.src_name) - Single Block",
+                    legend=show_legend,
+                    label = "Pol $pol",
+                    xlabel="Frequency (MHz)",
+                    ylabel=ylab,
+                    xticks=(ticks, labels),
+                    xflip=xinvert)
+        end
+
+        if disp
+            println("Displaying plot")
+            display(p)
+        end
+        if save
+            save_fn = "$(save_prefix)_$(rh.src_name)_block$(lpad(rh.curblock, 3, '0')).png"
+            println("Saveing plot to '$(save_fn)'")
+            savefig(p,save_fn)
+        end
+        return p
+    end
+
+    "Plot 2D histogram data."
+    function plot_2d(data, rh::GuppiRaw.Header, type::String)
+        plotly()
+        npol = size(data, 1)
+
+        # Power plotting
+        if type=="p" || type=="power"
+            title_prefix = "Power"
+            ylab = "Power"
+            max_value = 3000
+        # Kurtosis plotting with channel statistics
+        elseif type=="k" || type=="kurtosis"
+            title_prefix = "Kurtosis (chan stats)"
+            ylab = "Kurtosis"
+            max_value = 15
+        # Kurtosis plotting with block statistics
+        elseif type=="kb" || type=="kurtosis_block"
+            title_prefix = "Kurtosis (block stats)"
+            ylab = "Kurtosis"
+            max_value = 15
+        else
+            println("Please enter a valid plot type string (p, k, or kb)")
+            return nothing
+        end
+
+        yticks, ylabels, yinvert = get_fticks(rh, size(data,3))
+        xticks, xlabels, xlabel = get_tticks(rh, size(data, 2))
+        data = permutedims(data,[1,3,2])
+
+        if npol == 1 
+            heatmap(data[1,:,:], 
+                title="$title_prefix of $(rh.src_name)",
+                xlabel=xlabel,
+                xticks=(xticks, xlabels),
+                ylabel="Frequency (MHz)",
+                yflip=yinvert,
+                yticks=(yticks, ylabels),
+                clim=(0,max_value))
+        else
+            # TODO: Plot polarized heatmaps vertically stacked with pol labels
+        end
     end
 
 
+    #----------------#
+    # In Development #
+    #----------------#
+
+
     function power_spec_kernel(complex_block, power_block, nint, ntime)
-        pol = blockIdx().x
+        pol = blockIdx().x -1
         samp = (blockIdx().y - 1) * blockDim().x + threadIdx().x
-        chan = blockIdx().z
-        CUDA.real
+        chan = blockIdx().z -1
         
         if samp > ntime
             return
         end
-        # @inbounds complex_val = complex_block[pol, samp, chan]
-        # @inbounds power_block[pol, samp, chan] = complex_val.re  #CUDA.real(complex_val) * CUDA.real(complex_val) + CUDA.imag(complex_val) * CUDA.imag(complex_val)
+        #@inbounds complex_val = complex_block[pol, samp, chan]
+        #@inbounds power_block[pol, samp, chan] = complex_val[1] * complex_val[1] +
+        #                                        complex_val[0] * complex_val[0] 
+           
 
         # start_i = ((blockIdx().x - 1) * blockDim().x + threadIdx().x) * nint
-        if pol == 1 && samp==1000 && chan == 30
+        if pol == 1 && chan == 30
             
             @cuprint("Start: (pol=$pol, samp=$samp, chan=$chan) = \t
-                    Complex: $(complex_block[pol, samp, chan]) Power: $(power_block[pol, samp, chan])\t
+            Complex: $(complex_block[pol, samp, chan]) Power: $(power_block[pol, samp, chan])\t
                      Block = ($(blockIdx().x), $(blockIdx().y), $(blockIdx().z))\t
-                     Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z)) $(blockDim().x)\n")
+                     Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z))\n")
         end
         
     
@@ -188,8 +361,10 @@ module search
 
         d_complex_block = CuArray{Int8}(h_complex_block_split)
 
-        h_power_block = Array{UInt16}(undef, 1, Int(nthreads_per_chan), nchan)
+        h_power_block = Array{UInt16}(undef, npol, Int(nthreads_per_chan), nchan)
         d_power_block = CuArray(h_power_block)
+
+        println("Complex block size: $(size(d_complex_block))  Power block size: $(size(d_power_block))")
             
 
         CUDA.@sync begin
@@ -200,28 +375,7 @@ module search
         return h_power_block
     end
 
-    # TODO: Include mean and std calculations into kernel, create indexing without flattening
-    "Calculate the kurtosis of a power spectrum block using the GPU."
-    function kurtosis_gpu(h_power_block)
-        println("Calculating kurtosis - using GPU")
-        h_power_size = size(h_power_block)
-        nblocks = Int64(ceil(length(h_power_block) / MAX_THREADS_PER_BLOCK))
-        h_power_block = reshape(h_power_block, (:))
-
-        d_power_block = CuArray(h_power_block)
-        h_kurtosis_block = similar(h_power_block, Float32)
-        d_kurtosis_block = CuArray(h_kurtosis_block)
-
-        u = mean(d_power_block)
-        s4 = stdm(d_power_block, u) ^ 4
-        
-        CUDA.@sync begin
-            @cuda threads=(MAX_THREADS_PER_BLOCK, 1, 1) blocks=(nblocks, 1, 1) kurtosis_kernel(d_power_block, d_kurtosis_block, u, s4, length(h_power_block))
-        end
-        h_kurtosis_block = Array(d_kurtosis_block)
-        h_kurtosis_block = reshape(h_kurtosis_block, h_power_size)
-        return h_kurtosis_block
-    end
+    
 
     "Calculate the kurtosis by channel averaged over an entire GUPPI file."
     function kurtosis(fn::String)
@@ -252,76 +406,10 @@ module search
 
     end
 
-    "Create the ticks and labels for plots from GUPPI headers"
-    function get_xticks(rh::GuppiRaw.Header, data_length, num_ticks=10)
-        spec_flip = rh.obsbw < 0
-        obsbw = spec_flip ? rh.obsbw : -1 * rh.obsbw
+    
 
-        start_f = rh.obsfreq - 0.5 * obsbw
-        end_f   = rh.obsfreq + 0.5 * obsbw
-        tick_width = obsbw / num_ticks
-        labels = collect(start_f:tick_width:end_f)
-        labels = [ @sprintf("%5.0f",x) for x in labels ]
-        ticks = 0:data_length / num_ticks:data_length
-        println("Ticks: $ticks")
-        return ticks, labels, spec_flip
-    end
-    # Plot and display/save/return t
-    function plot_1d(block_data, rh::GuppiRaw.Header, type::String, disp=true, save=false)
-        gr()
-        show_legend = false
-        num_pols = size(block_data, 1)
-        if num_pols > 1
-            show_legend = true
-        end
-
-        # Bandpass plotting
-        if type=="b" || type=="bandpass"
-            title_prefix = "Bandpass"
-            save_prefix = "bandpass"
-            ylab = "Power"
-        # Kurtosis plotting with channel statistics
-        elseif type=="k" || type=="kurtosis"
-            title_prefix = "Kurtosis (chan stats)"
-            save_prefix = "kurtosis_bychan"
-            ylab = "Kurtosis"
-        # Kurtosis plotting with block statistics
-        elseif type=="kb" || type=="kurtosis_block"
-            title_prefix = "Kurtosis (block stats)"
-            save_prefix = "kurtosis_byblock"
-            ylab = "Kurtosis"
-        else
-            println("Please enter a valid plot type string (b, k, or kb)")
-            return nothing
-        end
-        ticks, labels, xinvert = get_xticks(rh, size(block_data,3))
-        println("xflip: $xinvert")
-        
-        p = plot()
-        for pol = 1:num_pols
-            plot!(p, block_data[pol,1,:],
-                    title="$title_prefix of $(rh.src_name) - Single Block",
-                    legend=show_legend,
-                    label = "Pol $pol",
-                    xlabel="Frequency (MHz)",
-                    ylabel=ylab,
-                    xticks=(ticks, labels),
-                    xflip=xinvert)
-        end
-
-        if disp
-            println("Displaying plot")
-            display(p)
-        end
-        if save
-            save_fn = "$(save_prefix)_$(rh.src_name)_block$(lpad(rh.curblock, 3, '0')).png"
-            println("Saveing plot to '$(save_fn)'")
-            savefig(p,save_fn)
-        end
-        return p
-    end
-
-    "Calculate the kurtosis of complex samples"
+    "Calculate the kurtosis of complex samples.
+        Probably not very useful."
     function kurtosis_complex(complex_block, bychan=false)
         kurtosis_block = Array{Complex{Float32}}(undef, (size(complex_block, 1),1,size(complex_block, 3)))
 
