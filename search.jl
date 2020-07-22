@@ -37,7 +37,7 @@ module search
 
     "Average over nint number of data points along the time axis for GUPPI data.
         Assumes the time dimension is the second dimension."
-    function average(data::Array, nint)
+    function average(data, nint)
         ntime = size(data, 2)
         if ntime % nint != 0
             println("Number of time samples is not divisible by nint. Returning original data.")
@@ -294,6 +294,8 @@ module search
             # TODO: Plot polarized heatmaps vertically stacked with pol labels
         end
     end
+
+
 
 
     #----------------#
