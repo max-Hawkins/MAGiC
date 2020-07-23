@@ -7,3 +7,4 @@ flagged/
 *.dat
 *.ipynb*
 *.raw
+*.h5
