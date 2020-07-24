@@ -79,6 +79,11 @@ Run inference on block of power data.
 Data must be scaled from 0-1 and have 256 rows.
 """
 def inference(model_filename, block_data, save=False):
+
+    # Check to see if data is scaled
+    if np.max(block_data) > 1.0:
+        block_data /= np.max(block_data)
+        
     trained_model = unet(pretrained_weights=model_filename)
     pulse_confidence_block = np.zeros(np.shape(block_data))
     num_plots = len(block_data[0]) // 256

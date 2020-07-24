@@ -1,7 +1,7 @@
 """
 Guppi data processing algorithms for energy detection.
 """
-module search
+module Search
     using Statistics
     using CUDA
     using Plots
@@ -30,8 +30,8 @@ module search
 
     "Development function - do not use"
     function get_test_data(fn::String)
-        raw, rh = search.load_guppi(fn)
-        complex = search.read_block_gr(raw, rh)
+        raw, rh = Search.load_guppi(fn)
+        complex = Search.read_block_gr(raw, rh)
         return complex
     end
 
@@ -58,7 +58,7 @@ module search
         if use_gpu # TODO: Check for GPU availability
             println("Using GPU")
             complex_block = CuArray{Complex{Int32}}(complex_block)
-            power_block   = CuArray{UInt16}(undef, size(complex_block))            
+            power_block   = CuArray{Int16}(undef, size(complex_block))            
         else
             complex_block = Array{Complex{Int32}}(complex_block)
         end
@@ -356,7 +356,8 @@ module search
 
         # Split complex values to allow for calculation in kernel
         # Julia kernels don't handle complex values well
-        h_complex_block_split = Array{Int8}(undef, (npol, ntime, nchan, 2))
+        # Resplit along three dimensions
+        h_complex_block_split = Array{Int8}(undef, (npol, ntime, nchan))
         h_complex_block_split[:,:,:,1] = real(h_complex_block)
         h_complex_block_split[:,:,:,2] = imag(h_complex_block)
         # println("h_complex_split: $(h_complex_block_split)")
@@ -377,6 +378,20 @@ module search
         return h_power_block
     end
 
+    function test_kernel(data)
+
+        @cuprint("Data: $(data[threadIdx().x, blockIdx().x, blockIdx().y])\t
+                     Block = ($(blockIdx().x), $(blockIdx().y), $(blockIdx().z))\t
+                     Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z))\n")
+        return nothing
+    end
+
+    function gpu_test(data::AbstractArray)
+        d_data = CuArray(data)
+
+        @cuda threads=(4,1,1) blocks=(2,3,1) test_kernel(d_data)
+
+    end
     
 
     "Calculate the kurtosis by channel averaged over an entire GUPPI file."
