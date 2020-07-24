@@ -78,12 +78,13 @@ def unet(pretrained_weights = None,input_size = (256,256,1)):
 Run inference on block of power data.
 Data must be scaled from 0-1 and have 256 rows.
 """
-def inference(model_filename, block_data, save=False):
+def inference(model_filename, block_data):
 
     # Check to see if data is scaled
     if np.max(block_data) > 1.0:
-        block_data /= np.max(block_data)
-        
+        # can't do /= with integer array - true_divide function doesn't handle that
+        block_data = block_data / np.max(block_data)
+
     trained_model = unet(pretrained_weights=model_filename)
     pulse_confidence_block = np.zeros(np.shape(block_data))
     num_plots = len(block_data[0]) // 256
@@ -99,8 +100,5 @@ def inference(model_filename, block_data, save=False):
         #print('Output plot shape: '+ str(np.shape(ml_confidence)))
         #rfi_confidence_block[:, start_pos: end_pos] = ml_confidence[0, :, :, 1]
         pulse_confidence_block[:, start_pos : end_pos] = ml_confidence[0, :, :, 0]
-
-    if save:
-        np.save(filename[:-4] + '_ml_confidence_pulse.npy', pulse_confidence_block)
 
     return pulse_confidence_block

@@ -8,3 +8,4 @@ flagged/
 *.ipynb*
 *.raw
 *.h5
+__*
