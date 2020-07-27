@@ -304,20 +304,18 @@ module Search
 
 
     function power_spec_kernel(complex_block, power_block, nint, ntime)
-        pol = blockIdx().x -1
+        pol = blockIdx().x
         samp = (blockIdx().y - 1) * blockDim().x + threadIdx().x
         chan = blockIdx().z -1
         
         if samp > ntime
             return
         end
-        #@inbounds complex_val = complex_block[pol, samp, chan]
-        #@inbounds power_block[pol, samp, chan] = complex_val[1] * complex_val[1] +
-        #                                        complex_val[0] * complex_val[0] 
+        # @inbounds real = complex_block[pol, samp, chan]
+        # @inbounds imag = complex_block[pol + 1, samp, chan]
+        # @inbounds power_block[pol, samp, chan] = real * real + imag * imag 
            
-
-        # start_i = ((blockIdx().x - 1) * blockDim().x + threadIdx().x) * nint
-        if pol == 1 && chan == 30
+        if chan == 50 && samp == 500
             
             @cuprint("Start: (pol=$pol, samp=$samp, chan=$chan) = \t
             Complex: $(complex_block[pol, samp, chan]) Power: $(power_block[pol, samp, chan])\t
@@ -325,23 +323,20 @@ module Search
                      Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z))\n")
         end
         
-    
-
         return nothing
     end
 
     function power_spec_gpu(h_complex_block, nint=1)
-	    npol, ntime, nchan  = size(h_complex_block)
-        if npol == 1
-            println("Complex data is not polarized. npols = $(npol)")
-            return
-        end
+        h_complex_block = reinterpret(Int8, h_complex_block)
+        npol, ntime, nchan  = size(h_complex_block)
+
         if nint > ntime
             println("Cannot integrate over longer length than data block.")
             return
         end
         if ntime % nint != 0
             println("integration length $(nint) doesn't evenly divide ntime $(ntime). Not integrating")
+            # TODO: Calculate next closest factor and use that averaging length
             return
         end
 
@@ -350,25 +345,16 @@ module Search
         
         nthreads_per_chan = ntime / nint
 
-        block_dim = (npol, Int(ceil(nthreads_per_chan / MAX_THREADS_PER_BLOCK)), nchan)
+        block_dim = (Int(npol / 2), Int(ceil(nthreads_per_chan / MAX_THREADS_PER_BLOCK)), nchan)
         grid_dim  = (MAX_THREADS_PER_BLOCK, 1, 1)
         println("block_dim: $(block_dim)  grid_dim: $(grid_dim)")
 
-        # Split complex values to allow for calculation in kernel
-        # Julia kernels don't handle complex values well
-        # Resplit along three dimensions
-        h_complex_block_split = Array{Int8}(undef, (npol, ntime, nchan))
-        h_complex_block_split[:,:,:,1] = real(h_complex_block)
-        h_complex_block_split[:,:,:,2] = imag(h_complex_block)
-        # println("h_complex_split: $(h_complex_block_split)")
 
-        d_complex_block = CuArray{Int8}(h_complex_block_split)
-
-        h_power_block = Array{UInt16}(undef, npol, Int(nthreads_per_chan), nchan)
+        d_complex_block = CuArray{Int8}(h_complex_block)
+        h_power_block = Array{UInt16}(undef, Int(npol / 2), Int(nthreads_per_chan), nchan)
         d_power_block = CuArray(h_power_block)
 
         println("Complex block size: $(size(d_complex_block))  Power block size: $(size(d_power_block))")
-            
 
         CUDA.@sync begin
             @cuda threads=grid_dim blocks=block_dim power_spec_kernel(d_complex_block, d_power_block, nint, ntime)
@@ -380,7 +366,7 @@ module Search
 
     function test_kernel(data)
 
-        @cuprint("Data: $(data[threadIdx().x, blockIdx().x, blockIdx().y])\t
+        @inbounds @cuprint("Data: $(data[threadIdx().x, blockIdx().x, blockIdx().y])\t
                      Block = ($(blockIdx().x), $(blockIdx().y), $(blockIdx().z))\t
                      Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z))\n")
         return nothing
