@@ -306,22 +306,21 @@ module Search
     function power_spec_kernel(complex_block, power_block, nint, ntime)
         pol = blockIdx().x
         samp = (blockIdx().y - 1) * blockDim().x + threadIdx().x
-        chan = blockIdx().z -1
+        chan = blockIdx().z
         
-        if samp > ntime
-            return
+        if samp > ntime - 1
+            return nothing
         end
-        # @inbounds real = complex_block[pol, samp, chan]
-        # @inbounds imag = complex_block[pol + 1, samp, chan]
-        # @inbounds power_block[pol, samp, chan] = real * real + imag * imag 
+        @inbounds real = complex_block[1, 1, 1]
+        #@inbounds imag = complex_block[pol, samp, chan]
+        @inbounds power_block[1, 1, 1] = real ^ 2 
            
-        if chan == 50 && samp == 500
-            
-            @cuprint("Start: (pol=$pol, samp=$samp, chan=$chan) = \t
-            Complex: $(complex_block[pol, samp, chan]) Power: $(power_block[pol, samp, chan])\t
-                     Block = ($(blockIdx().x), $(blockIdx().y), $(blockIdx().z))\t
-                     Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z))\n")
-        end
+        # if pol == 1 && chan==50 && (samp >= 1032700 || samp <= 1)
+        #     @cuprint("Start: (pol=$pol, samp=$samp, chan=$chan) = \t
+        #              Complex: $(real) Power: $(power_block[pol, samp, chan])\t
+        #              Block = ($(blockIdx().x), $(blockIdx().y), $(blockIdx().z))\t
+        #              Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z))\n")
+        # end
         
         return nothing
     end
@@ -366,13 +365,14 @@ module Search
 
     function test_kernel(data)
 
-        @inbounds @cuprint("Data: $(data[threadIdx().x, blockIdx().x, blockIdx().y])\t
+        @inbounds @cuprint("Data: $(data[threadIdx().x,blockIdx().y,blockIdx().x] ^ 2)\t
                      Block = ($(blockIdx().x), $(blockIdx().y), $(blockIdx().z))\t
                      Grid = ($(threadIdx().x), $(threadIdx().y), $(threadIdx().z))\n")
         return nothing
     end
 
     function gpu_test(data::AbstractArray)
+        data = reinterpret(Int8, data)
         d_data = CuArray(data)
 
         @cuda threads=(4,1,1) blocks=(2,3,1) test_kernel(d_data)
