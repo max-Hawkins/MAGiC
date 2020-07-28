@@ -16,10 +16,6 @@
 #     int semid;          /* ID of locking semaphore set */
 # } hashpipe_databuf_t;
 
-# int hashpipe_status_lock(hashpipe_status_t *s);
-# int hashpipe_status_lock_busywait(hashpipe_status_t *s);
-# int hashpipe_status_unlock(hashpipe_status_t *s);
-
 # TODO create sem_t
 # Example Julia creation for argument passing: status = Ref{hashpipe_status_t}(0,0,0,0)
 mutable struct hashpipe_status_t
@@ -38,6 +34,20 @@ struct hashpipe_databuf_t
     semid::Cint
 end
 
+# Display hashpipe status
+function display(s::hashpipe_status_t)
+    BUFFER_MAX_RECORDS = 20
+    println("Instance ID: $(s.instance_id)")
+    println("shmid: $(s.shmid)")
+    println("Lock: $lock")
+    lock = unsafe_wrap(Array, s.p_lock, (1))[1]
+
+    println("Buffer:")    
+    string_array = unsafe_wrap(Array, s.p_buf, (80, BUFFER_MAX_RECORDS))
+    mapslices(x->all(x.==0x00) ? nothing : println("\t", String(x)), string_array, dims=1)
+    return nothing
+end
+
 # TODO: wrap with error checking based on function
 # Returns 0 with error
 function hashpipe_status_exists(instance_id::Int)
@@ -49,11 +59,6 @@ end
 function hashpipe_status_attach(instance_id::Int, p_hashpipe_status::Ref{hashpipe_status_t})
     ccall((:hashpipe_status_attach, "libhashpipestatus.so"),
             Int, (Int8, Ref{hashpipe_status_t}), instance_id, p_hashpipe_status)
-end
-
-function hashpipe_databuf_attach(instance_id::Int, db_id::Int)
-    ccall((:hashpipe_databuf_attach, "libhashpipestatus.so"),
-            Ptr{hashpipe_databuf_t}, (Int8, Int8), instance_id, db_id)
 end
 
 function hashpipe_status_lock(p_hashpipe_status::Ref{hashpipe_status_t})
@@ -71,7 +76,11 @@ function hashpipe_status_clear(p_hashpipe_status::Ref{hashpipe_status_t})
             Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
 end
 
-function get_status_buffer(instance_id::Int)
-    ccall((:get_status_buffer, "libhashpipestatus.so"),
-            Ptr{hashpipe_status_t}, (Int8,), instance_id)
+#-------------#
+# Development #
+#-------------#
+
+function hashpipe_databuf_attach(instance_id::Int, db_id::Int)
+    ccall((:hashpipe_databuf_attach, "libhashpipestatus.so"),
+            Ptr{hashpipe_databuf_t}, (Int8, Int8), instance_id, db_id)
 end
