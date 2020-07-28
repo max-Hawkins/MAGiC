@@ -39,13 +39,18 @@ function display(s::hashpipe_status_t)
     BUFFER_MAX_RECORDS = 20
     println("Instance ID: $(s.instance_id)")
     println("shmid: $(s.shmid)")
-    println("Lock: $lock")
     lock = unsafe_wrap(Array, s.p_lock, (1))[1]
+    println("Lock: $lock")
 
     println("Buffer:")    
     string_array = unsafe_wrap(Array, s.p_buf, (80, BUFFER_MAX_RECORDS))
     mapslices(x->all(x.==0x00) ? nothing : println("\t", String(x)), string_array, dims=1)
     return nothing
+end
+
+# Display hashpipe status from reference
+function display(r::Ref{hashpipe_status_t})
+    display(r[])
 end
 
 # TODO: wrap with error checking based on function
