@@ -17,6 +17,7 @@
 # } hashpipe_databuf_t;
 #define HASHPIPE_STATUS_TOTAL_SIZE (2880*64) // FITS-style buffer
 #define HASHPIPE_STATUS_RECORD_SIZE 80 // Size of each record (e.g. FITS "card")
+
 const global HASHPIPE_STATUS_TOTAL_SIZE = 184320 # 2880 * 64
 const global HASHPIPE_STATUS_RECORD_SIZE = 80
 
@@ -61,6 +62,7 @@ end
 # Display hashpipe status from reference
 function display(r::Ref{hashpipe_status_t})
     display(r[])
+    return nothing
 end
 
 # Display hashpipe buffer
@@ -72,20 +74,23 @@ function display(d::hashpipe_databuf_t)
     println("Block Size: $(d.block_size)")
     println("shmid: $(d.shmid)")
     println("semid: $(d.semid)")
+    return nothing
 end
 
 # Display hashpipe databuf from pointer
 function display(p::Ptr{hashpipe_databuf_t})
     databuf = unsafe_wrap(Array, p, 1)[]
     display(databuf)
+    return nothing
 end
 
 # TODO: wrap with error checking based on function
 # Returns 0 with error
 function hashpipe_status_exists(instance_id::Int)
-    ccall((:hashpipe_status_exists, 
-            "libhashpipestatus.so"), 
-            Int8, (Int8,), instance_id)
+    exists::Int8 = ccall((:hashpipe_status_exists, 
+                "libhashpipestatus.so"), 
+                Int8, (Int8,), instance_id)
+    return exists
 end
 
 function hashpipe_status_attach(instance_id::Int, p_hashpipe_status::Ref{hashpipe_status_t})
@@ -126,4 +131,5 @@ function hashpipe_check_databuf(instance_id::Int = 0, db_id::Int = 1)
     end
     println("--- Databuf $db_id Stats ---")
     display(p_databuf)
+    return nothing
 end
