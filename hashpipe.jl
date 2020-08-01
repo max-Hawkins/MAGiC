@@ -1,22 +1,4 @@
-# /* Structure describes status memory area */
-# typedef struct {
-#     int instance_id; /* Instance ID of this status buffer (DO NOT SET/CHANGE!) */
-#     int shmid;   /* Shared memory segment id */
-#     sem_t *lock; /* POSIX semaphore descriptor for locking */
-#     char *buf;   /* Pointer to data area */
-# } hashpipe_status_t;
-
-# // Define hashpipe_databuf structure
-# typedef struct {
-#     char data_type[64]; /* Type of data in buffer */
-#     size_t header_size; /* Size of each block header (bytes) */
-#     size_t block_size;  /* Size of each data block (bytes) */
-#     int n_block;        /* Number of data blocks in buffer */
-#     int shmid;          /* ID of this shared mem segment */
-#     int semid;          /* ID of locking semaphore set */
-# } hashpipe_databuf_t;
-#define HASHPIPE_STATUS_TOTAL_SIZE (2880*64) // FITS-style buffer
-#define HASHPIPE_STATUS_RECORD_SIZE 80 // Size of each record (e.g. FITS "card")
+# C Hashpipe functions ported for Julia usability
 
 # Error Codes
 const global HASHPIPE_OK         =  0
