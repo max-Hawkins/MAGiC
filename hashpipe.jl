@@ -183,21 +183,27 @@ end
 # it is already in that state.
  
 function hashpipe_databuf_wait_filled(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
-    error::Int = ccall((:hashpipe_databuf_wait_free, "libhashpipe.so"),
+    error::Int = ccall((:hashpipe_databuf_wait_filled, "libhashpipe.so"),
                     Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
     return error
 end
 
 function hashpipe_databuf_wait_free()
-
+    error::Int = ccall((:hashpipe_databuf_wait_free, "libhashpipe.so"),
+                    Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
+    return error
 end
 
 function hashpipe_databuf_set_filled()
-
+    error::Int = ccall((:hashpipe_databuf_set_filled, "libhashpipe.so"),
+                    Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
+    return error
 end
 
 function hashpipe_databuf_set_free()
-
+    error::Int = ccall((:hashpipe_databuf_set_free, "libhashpipe.so"),
+                    Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
+    return error
 end
 
 #-------------#
