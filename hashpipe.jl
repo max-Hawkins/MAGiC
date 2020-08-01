@@ -18,11 +18,21 @@
 #define HASHPIPE_STATUS_TOTAL_SIZE (2880*64) // FITS-style buffer
 #define HASHPIPE_STATUS_RECORD_SIZE 80 // Size of each record (e.g. FITS "card")
 
+# Error Codes
+const global HASHPIPE_OK         =  0
+const global HASHPIPE_TIMEOUT    =  1 # Call timed out 
+const global HASHPIPE_ERR_GEN    = -1 # Super non-informative
+const global HASHPIPE_ERR_SYS    = -2 # Failed system call
+const global HASHPIPE_ERR_PARAM  = -3 # Parameter out of range
+const global HASHPIPE_ERR_KEY    = -4 # Requested key doesn't exist
+const global HASHPIPE_ERR_PACKET = -5 # Unexpected packet size
+# Status size
 const global HASHPIPE_STATUS_TOTAL_SIZE = 184320 # 2880 * 64
 const global HASHPIPE_STATUS_RECORD_SIZE = 80
 
 # TODO create sem_t
 # Example Julia creation for argument passing: status = Ref{hashpipe_status_t}(0,0,0,0)
+# Hashpipe status struct
 mutable struct hashpipe_status_t
     instance_id::Cint
     shmid::Cint
@@ -30,6 +40,7 @@ mutable struct hashpipe_status_t
     p_buf::Ptr{UInt8}
 end
 
+# Hashpipe databuf struct
 struct hashpipe_databuf_t
     data_type::NTuple{64, UInt8}
     header_size::Int # May need to change to Csize_t
@@ -94,32 +105,60 @@ function hashpipe_status_exists(instance_id::Int)
 end
 
 function hashpipe_status_attach(instance_id::Int, p_hashpipe_status::Ref{hashpipe_status_t})
-    ccall((:hashpipe_status_attach, "libhashpipestatus.so"),
-            Int, (Int8, Ref{hashpipe_status_t}), instance_id, p_hashpipe_status)
+    error::Int8 = ccall((:hashpipe_status_attach, "libhashpipestatus.so"),
+                    Int, (Int8, Ref{hashpipe_status_t}), instance_id, p_hashpipe_status)
+    return error
 end
 
 function hashpipe_status_lock(p_hashpipe_status::Ref{hashpipe_status_t})
-    ccall((:hashpipe_status_lock, "libhashpipestatus.so"),
-            Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
+    error::Int8 = ccall((:hashpipe_status_lock, "libhashpipestatus.so"),
+                    Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
+    return error
 end
 
 function hashpipe_status_unlock(p_hashpipe_status::Ref{hashpipe_status_t})
-    ccall((:hashpipe_status_unlock, "libhashpipestatus.so"),
-            Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
+    error::Int8 = ccall((:hashpipe_status_unlock, "libhashpipestatus.so"),
+                    Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
+    return error
 end
 
 function hashpipe_status_clear(p_hashpipe_status::Ref{hashpipe_status_t})
     ccall((:hashpipe_status_clear, "libhashpipestatus.so"),
             Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
+    return nothing
 end
 
-#-------------#
-# Development #
-#-------------#
+function hashpipe_databuf_data(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
+    p_data::Ptr{Int8} = ccall((:hashpipe_databuf_data, "libhashpipe.so"),
+                            Ptr{Int8}, (Ptr{hashpipe_status_t}, Int8), p_databuf, block_id)
+    return p_data
+end
 
+function hashpipe_databuf_create(instance_id::Int, db_id::Int,
+            header_size::Int, block_size::Int, n_block::Int)
+    p_databuf::Ptr{hashpipe_databuf_t} = 
+            ccall((:hashpipe_databuf_create, "libhashpipe.so"),
+                Ptr{hashpipe_databuf_t},
+                (Int8, Int8, Int8, Int8, Int8),
+                instance_id, db_id, header_size, block_size, n_block)
+    return p_databuf
+end
+
+function hashpipe_databuf_clear(p_databuf::Ptr{hashpipe_databuf_t})
+    ccall((:hashpipe_databuf_clear, "libhashpipe.so"),
+            Cvoid, (Ptr{hashpipe_status_t},), p_databuf)
+    return nothing
+end
 function hashpipe_databuf_attach(instance_id::Int, db_id::Int)
-    ccall((:hashpipe_databuf_attach, "libhashpipe.so"),
-            Ptr{hashpipe_databuf_t}, (Int8, Int8), instance_id, db_id)
+    p_databuf::Ptr{hashpipe_databuf_t} = ccall((:hashpipe_databuf_attach, "libhashpipe.so"),
+                    Ptr{hashpipe_databuf_t}, (Int8, Int8), instance_id, db_id)
+    return p_databuf
+end
+
+function hashpipe_databuf_detach(p_databuf::Ptr{hashpipe_databuf_t})
+    error::Int = ccall((:hashpipe_databuf_attach, "libhashpipe.so"),
+                    Int, (Ptr{hashpipe_databuf_t},), p_databuf)
+    return error
 end
 
 # Check hashpipe databuf status
@@ -133,3 +172,53 @@ function hashpipe_check_databuf(instance_id::Int = 0, db_id::Int = 1)
     display(p_databuf)
     return nothing
 end
+
+function hashpipe_databuf_block_status(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
+    block_status::Int = ccall((:hashpipe_databuf_block_status, "libhashpipe.so"),
+                    Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
+    return block_status
+end
+
+# Return total lock status for databuf
+function hashpipe_databuf_total_status(p_databuf::Ptr{hashpipe_databuf_t})
+    total_status::Int = ccall((:hashpipe_databuf_total_status, "libhashpipe.so"),
+                    Int, (Ptr{hashpipe_databuf_t},), p_databuf)
+    return total_status
+end
+
+function hashpipe_databuf_total_mask(p_databuf::Ptr{hashpipe_databuf_t})
+    total_mask::UInt64 = ccall((:hashpipe_databuf_total_mask, "libhashpipe.so"),
+                    UInt64, (Ptr{hashpipe_databuf_t},), p_databuf)
+    return total_mask
+end
+
+# Databuf locking functions.  Each block in the buffer
+# can be marked as free or filled.  The "wait" functions
+# block (i.e. sleep) until the specified state happens.
+# The "busywait" functions busy-wait (i.e. do NOT sleep)
+# until the specified state happens.  The "set" functions
+# put the buffer in the specified state, returning error if
+# it is already in that state.
+ 
+function hashpipe_databuf_wait_filled(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
+    error::Int = ccall((:hashpipe_databuf_wait_free, "libhashpipe.so"),
+                    Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
+    return error
+end
+
+function hashpipe_databuf_wait_free()
+
+end
+
+function hashpipe_databuf_set_filled()
+
+end
+
+function hashpipe_databuf_set_free()
+
+end
+
+#-------------#
+# Development #
+#-------------#
+
