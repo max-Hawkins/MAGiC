@@ -188,19 +188,19 @@ function hashpipe_databuf_wait_filled(p_databuf::Ptr{hashpipe_databuf_t}, block_
     return error
 end
 
-function hashpipe_databuf_wait_free()
+function hashpipe_databuf_wait_free(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
     error::Int = ccall((:hashpipe_databuf_wait_free, "libhashpipe.so"),
                     Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
     return error
 end
 
-function hashpipe_databuf_set_filled()
+function hashpipe_databuf_set_filled(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
     error::Int = ccall((:hashpipe_databuf_set_filled, "libhashpipe.so"),
                     Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
     return error
 end
 
-function hashpipe_databuf_set_free()
+function hashpipe_databuf_set_free(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
     error::Int = ccall((:hashpipe_databuf_set_free, "libhashpipe.so"),
                     Int, (Ptr{hashpipe_databuf_t}, Int), p_databuf, block_id)
     return error
