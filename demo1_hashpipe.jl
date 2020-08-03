@@ -17,7 +17,7 @@ end
 
 mutable struct demo1_input_databuf_t 
   header::hashpipe_databuf_t
-  padding::demo1_input_header_cache_alignment
+  padding::Int = demo1_input_header_cache_alignment
   block::Array{demo1_input_block_t, N_INPUT_BLOCKS} 
 end
 

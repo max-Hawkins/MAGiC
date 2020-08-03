@@ -111,8 +111,8 @@ function hashpipe_status_clear(p_hashpipe_status::Ref{hashpipe_status_t})
 end
 
 function hashpipe_databuf_data(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
-    p_data::Ptr{Int8} = ccall((:hashpipe_databuf_data, "libhashpipe.so"),
-                            Ptr{Int8}, (Ptr{hashpipe_status_t}, Int8), p_databuf, block_id)
+    p_data::Ptr{UInt8} = ccall((:hashpipe_databuf_data, "libhashpipe.so"),
+                            Ptr{UInt8}, (Ptr{hashpipe_status_t}, Int8), p_databuf, block_id)
     return p_data
 end
 
