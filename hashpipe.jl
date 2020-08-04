@@ -220,6 +220,17 @@ function hashpipe_databuf_set_free(p_databuf::Ptr{hashpipe_databuf_t}, block_id:
     return error
 end
 
+#----------------#
+# Hput Functions #
+#----------------#
+
+function hputs(p_hstring::Ptr{UInt8}, p_keyword::Ref{Cstring}, p_cval::String )
+    error::Int = ccall((:hputs, "libhashpipestatus.so"),
+                    Int, (Ptr{UInt8}, Ref{String}, String),
+                    p_hstring, p_keyword, p_cval)
+    return error
+end
+
 #-------------#
 # Development #
 #-------------#

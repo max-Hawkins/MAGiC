@@ -18,6 +18,7 @@ instance_id = 0
 NUM_BLOCKS = 3
 cur_block_in  = 0 # Zero-indexed!
 cur_block_out = 0 # Zero-indexed
+status_key = "GPUSTAT"
 
 status = hashpipe_status_t(0,0,0,0)
 r_status = Ref(status)
