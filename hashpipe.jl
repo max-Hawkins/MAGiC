@@ -32,6 +32,10 @@ struct hashpipe_databuf_t
     semid::Cint
 end
 
+#----------#
+# Displays #
+#----------#
+
 # Display hashpipe status
 function display(s::hashpipe_status_t)
     BUFFER_MAX_RECORDS = Int(HASHPIPE_STATUS_TOTAL_SIZE / 80)
@@ -77,6 +81,10 @@ function display(p::Ptr{hashpipe_databuf_t})
     return nothing
 end
 
+#---------------------------#
+# Hashpipe Status Functions #
+#---------------------------#
+
 # TODO: wrap with error checking based on function
 # Returns 0 with error
 function hashpipe_status_exists(instance_id::Int)
@@ -104,11 +112,17 @@ function hashpipe_status_unlock(p_hashpipe_status::Ref{hashpipe_status_t})
     return error
 end
 
+# TODO: Hashpipe status un/lock safe functions
+
 function hashpipe_status_clear(p_hashpipe_status::Ref{hashpipe_status_t})
     ccall((:hashpipe_status_clear, "libhashpipestatus.so"),
             Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
     return nothing
 end
+
+#----------------------------#
+# Hashpipe Databuf Functions #
+#----------------------------#
 
 function hashpipe_databuf_data(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int)
     p_data::Ptr{UInt8} = ccall((:hashpipe_databuf_data, "libhashpipe.so"),
