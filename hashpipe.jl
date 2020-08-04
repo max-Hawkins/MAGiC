@@ -224,10 +224,17 @@ end
 # Hput Functions #
 #----------------#
 
-function hputs(p_hstring::Ptr{UInt8}, p_keyword::Ref{Cstring}, p_cval::String )
+function hputs(p_hstring::Ptr{UInt8}, p_keyword::Cstring, p_cval::Cstring )
     error::Int = ccall((:hputs, "libhashpipestatus.so"),
-                    Int, (Ptr{UInt8}, Ref{String}, String),
+                    Int, (Ptr{UInt8}, Cstring, Cstring),
                     p_hstring, p_keyword, p_cval)
+    return error
+end
+
+function hputi4(p_hstring::Ptr{UInt8}, p_keyword::Cstring, p_ival::Cint)
+    error::Int = ccall((:hputi4, "libhashpipestatus.so"),
+                    Int, (Ptr{UInt8}, Cstring, Cint),
+                    p_hstring, p_keyword, p_ival)
     return error
 end
 
