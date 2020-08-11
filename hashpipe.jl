@@ -1,6 +1,10 @@
-# C Hashpipe functions ported for Julia usability
+"""
+C Hashpipe functions ported for Julia usability.
+Hashpipe written by Dave MacMahon: https://github.com/david-macmahon/hashpipe
+Note: These functions currently don't implement error checking.
+"""
 
-# Error Codes
+# Hashpipe error Codes
 const global HASHPIPE_OK         =  0
 const global HASHPIPE_TIMEOUT    =  1 # Call timed out 
 const global HASHPIPE_ERR_GEN    = -1 # Super non-informative
@@ -8,13 +12,21 @@ const global HASHPIPE_ERR_SYS    = -2 # Failed system call
 const global HASHPIPE_ERR_PARAM  = -3 # Parameter out of range
 const global HASHPIPE_ERR_KEY    = -4 # Requested key doesn't exist
 const global HASHPIPE_ERR_PACKET = -5 # Unexpected packet size
-# Status size
+# Status constants
 const global HASHPIPE_STATUS_TOTAL_SIZE = 184320 # 2880 * 64
 const global HASHPIPE_STATUS_RECORD_SIZE = 80
 
-# TODO create sem_t
-# Example Julia creation for argument passing: status = Ref{hashpipe_status_t}(0,0,0,0)
-# Hashpipe status struct
+"""
+Hashpipe Status struct
+    
+May need to create empty status struct before trying to attaching
+to existing status buffer.
+Example:
+    instance_id = 0
+    status = hashpipe_status_t(0,0,0,0)
+    r_status = Ref(status)
+    hashpipe_status_attach(instance_id, r_status)
+"""
 mutable struct hashpipe_status_t
     instance_id::Cint
     shmid::Cint
@@ -22,7 +34,7 @@ mutable struct hashpipe_status_t
     p_buf::Ptr{UInt8}
 end
 
-# Hashpipe databuf struct
+"Hashpipe databuf struct"
 struct hashpipe_databuf_t
     data_type::NTuple{64, UInt8}
     header_size::Int # May need to change to Csize_t
@@ -36,7 +48,7 @@ end
 # Displays #
 #----------#
 
-# Display hashpipe status
+"Display hashpipe status"
 function display(s::hashpipe_status_t)
     BUFFER_MAX_RECORDS = Int(HASHPIPE_STATUS_TOTAL_SIZE / 80)
     println("Instance ID: $(s.instance_id)")
@@ -56,25 +68,26 @@ function display(s::hashpipe_status_t)
     return nothing
 end
 
-# Display hashpipe status from reference
+"Display hashpipe status from reference"
 function display(r::Ref{hashpipe_status_t})
     display(r[])
     return nothing
 end
 
-# Display hashpipe buffer
+"Display hashpipe buffer"
 function display(d::hashpipe_databuf_t)
     # Convert Ntuple to array and strip 0s before converting to string
     data_type_string = String(filter(x->x!=0x00, collect(d.data_type)))
     println("Data Type: $(data_type_string)")
     println("Header Size: $(d.header_size)")
+    println("Num Blocks: $(d.n_block)")
     println("Block Size: $(d.block_size)")
     println("shmid: $(d.shmid)")
     println("semid: $(d.semid)")
     return nothing
 end
 
-# Display hashpipe databuf from pointer
+"Display hashpipe databuf from pointer"
 function display(p::Ptr{hashpipe_databuf_t})
     databuf = unsafe_wrap(Array, p, 1)[]
     display(databuf)
@@ -230,6 +243,13 @@ function hputs(p_hstring::Ptr{UInt8}, p_keyword::Cstring, p_cval::Cstring )
                     p_hstring, p_keyword, p_cval)
     return error
 end
+# Auto-convert Julia string to Cstring
+function hputs(p_hstring::Ptr{UInt8}, p_keyword::String, p_cval::String)
+    error::Int = ccall((:hputs, "libhashpipestatus.so"),
+                    Int, (Ptr{UInt8}, Cstring, Cstring),
+                    p_hstring, Cstring(pointer(p_keyword)), Cstring(pointer(p_cval)))
+    return error
+end
 
 function hputi4(p_hstring::Ptr{UInt8}, p_keyword::Cstring, p_ival::Cint)
     error::Int = ccall((:hputi4, "libhashpipestatus.so"),
@@ -237,7 +257,13 @@ function hputi4(p_hstring::Ptr{UInt8}, p_keyword::Cstring, p_ival::Cint)
                     p_hstring, p_keyword, p_ival)
     return error
 end
-
+# Auto-convert julia string/int to Cstring/Cint
+function hputi4(p_hstring::Ptr{UInt8}, p_keyword::String, p_ival::Int)
+    error::Int = ccall((:hputi4, "libhashpipestatus.so"),
+                    Int, (Ptr{UInt8}, Cstring, Cint),
+                    p_hstring, Cstring(pointer(p_keyword)), Cint(p_ival))
+    return error
+end
 #-------------#
 # Development #
 #-------------#

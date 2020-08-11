@@ -1,7 +1,9 @@
 """
-Guppi data processing algorithms for energy detection.
-"""
+Data processing algorithms for energy detection.
+NOTE: Most functions found here are in development and may not be usable.
+""" 
 module Search
+    # TODO: Strip data loading functions and make more usable for hashpipe.jl
     using Statistics
     using CUDA
     using Plots
@@ -36,7 +38,7 @@ module Search
     end
 
     "Average over nint number of data points along the time axis for GUPPI data.
-        Assumes the time dimension is the second dimension."
+     Assumes the time dimension is the second dimension."
     function average(data, nint)
         ntime = size(data, 2)
         if ntime % nint != 0
@@ -49,9 +51,10 @@ module Search
         return data
     end
 
-    "Compute the power of complex voltage data and return the spectrogram.
-        If sum_pols is true and the complex data is polarized, the polarized
-        powers are summed."
+    """
+    Compute the power of complex voltage data and return the spectrogram.
+    If sum_pols is true and the complex data is polarized, the polarized powers are summed.
+    """
     function power_spec(complex_block, avg_dim=-1, use_gpu=true, return_gpu_data=false)
         println("Calculating power spectrum")
 
@@ -88,9 +91,11 @@ module Search
         return k
     end
 
-    "Calculate the population kurtosis values for each coarse channel in a power spectrum.
-        If by_chan is false, the statistics used when computing the kurtosis
-        are calculated from the entire block of data."
+    """
+    Calculate the population kurtosis values for each coarse channel in a power spectrum.
+    If by_chan is false, the statistics used when computing the kurtosis
+    are calculated from the entire block of data.
+    """
     function kurtosis_safe(power_block, by_chan=true)
         kurtosis_block = Array{Float32}(power_block)
         if !by_chan
@@ -411,8 +416,10 @@ module Search
 
     
 
-    "Calculate the kurtosis of complex samples.
-        Probably not very useful."
+    """
+    Calculate the kurtosis of complex samples.
+    Probably not very useful. Distribution does not change much for voltages.
+    """
     function kurtosis_complex(complex_block, bychan=false)
         kurtosis_block = Array{Complex{Float32}}(undef, (size(complex_block, 1),1,size(complex_block, 3)))
 
