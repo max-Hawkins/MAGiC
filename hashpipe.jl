@@ -18,7 +18,7 @@ const global HASHPIPE_STATUS_RECORD_SIZE = 80
 
 """
 Hashpipe Status struct
-    
+
 May need to create empty status struct before trying to attaching
 to existing status buffer.
 Example:
@@ -148,7 +148,7 @@ function hashpipe_databuf_create(instance_id::Int, db_id::Int,
     p_databuf::Ptr{hashpipe_databuf_t} = 
             ccall((:hashpipe_databuf_create, "libhashpipe.so"),
                 Ptr{hashpipe_databuf_t},
-                (Int8, Int8, Int8, Int8, Int8),
+                (Int8, Int8, Int, Int, Int),
                 instance_id, db_id, header_size, block_size, n_block)
     return p_databuf
 end
