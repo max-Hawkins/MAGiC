@@ -5,6 +5,7 @@ const N_INPUT_BLOCKS = 24
 const BLOCK_HDR_SIZE = 5*80*512
 const BLOCK_DATA_SIZE = 128*1024*1024
 const padding_size = ALIGNMENT_SIZE - (sizeof(hashpipe_databuf_t)%ALIGNMENT_SIZE)
+const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
 # typedef struct hpguppi_input_block {
 #     char hdr[BLOCK_HDR_SIZE];
 #     char data[BLOCK_DATA_SIZE];
@@ -24,28 +25,33 @@ const padding_size = ALIGNMENT_SIZE - (sizeof(hashpipe_databuf_t)%ALIGNMENT_SIZE
 # looked into using StaticArrays, but stated large arrays are best kept as Array
 mutable struct hpguppi_input_block_t
     hdr::NTuple{BLOCK_HDR_SIZE, Cchar}
-    data::NTuple{BLOCK_DATA_SIZE, Cchar}
+    data::NTuple{BLOCK_DATA_SIZE, Int8}
 end
 
 mutable struct hpguppi_input_databuf_t
-    header::hashpipe_databuf_t
+    p_header::hashpipe_databuf_t
     padding::NTuple{padding_size, Int8}
-    block::NTuple{N_INPUT_BLOCKS, hpguppi_input_block_t}
+    p_blocks::Ptr{Any}
+end
+
+function display_status(instance_id::Int)
+    status = hashpipe_status_t(0,0,0,0)
+    r_status = Ref(status)
+
+    hashpipe_status_attach(instance_id, r_status)
+    display(status)
+    return nothing
 end
 
 instance_id = 0
 input_db_id = 2
-
 cur_block_in = 0
 cur_block_out = 0
 
-status = hashpipe_status_t(0,0,0,0)
-r_status = Ref(status)
+display_status(0)
 
-hashpipe_status_attach(instance_id, r_status)
-display(status)
+input_db = Ptr{hpguppi_input_databuf_t}(hashpipe_databuf_attach(instance_id, input_db_id))
 
-input_db = hashpipe_databuf_attach(instance_id, input_db_id)
 
 while true
 
@@ -85,24 +91,8 @@ while true
 
     println("\nInput DB Block $cur_block_in filled")
 
-    in_data = unsafe_wrap(Array, Ptr{Int64}(hashpipe_databuf_data(input_db, cur_block_in)), 4)
-    println("In data: $in_data")
-    out_sum = in_data[3] + in_data[4]
-    println("Out sum: $out_sum")
+    
     
     hashpipe_databuf_set_free(input_db, cur_block_in)
-    global cur_block_in = (cur_block_in + 1) % NUM_BLOCKS
 
-    out_data = unsafe_wrap(Array, Ptr{Int64}(hashpipe_databuf_data(output_db, cur_block_out)), 3)
-    println("Out_data before: $out_data")
-    out_data[3] = out_sum
-    println("Out after: $out_data")
-
-    hashpipe_databuf_set_filled(output_db, cur_block_out)
-    global cur_block_out = (cur_block_out + 1) % NUM_BLOCKS
-
-    hashpipe_status_lock(r_status);
-	hputi4(status.p_buf, Cstring(pointer("GPUSUM")), Cint(out_sum));
-	hashpipe_status_unlock(r_status);
-    
 end
