@@ -126,6 +126,26 @@ function hashpipe_status_unlock(p_hashpipe_status::Ref{hashpipe_status_t})
 end
 
 # TODO: Hashpipe status un/lock safe functions
+# make a function that takes a function as the first argument
+
+# do block after function
+# function foo(f::Function, x); printf(f(x)); end
+# foo(1) do x
+# println(2*x)
+# end\
+
+# include finally clause to always unlock status buffer
+
+function hashpipe_status_buf_lock_unlock(f::Function, st::Ptr{hashpipe_status_t})
+        try
+            hashpipe_status_lock(st)
+            f() # or f(st) TODO: test which of these is better
+        catch
+            println("Error locking hashpipe status buffer.")
+        finally
+            hashpipe_status_unlock(st)
+        end
+end
 
 function hashpipe_status_clear(p_hashpipe_status::Ref{hashpipe_status_t})
     ccall((:hashpipe_status_clear, "libhashpipestatus.so"),
