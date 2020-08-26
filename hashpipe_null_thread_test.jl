@@ -46,16 +46,16 @@ hashpipe_status_attach(instance_id, r_status)
 display(status)
 
 input_db = hashpipe_databuf_attach(instance_id, input_db_id)
-
+println(status.p_buf)
 
 while true
 
-    hashpipe_status_lock(r_status);
-    hputi4(status.p_buf, Cstring(pointer("GPUBLKIN")), Cint(cur_block_in));
-    hputs(status.p_buf, status_key, "waiting");
-    hputi4(status.p_buf, Cstring(pointer("GPUBKOUT")), Cint(cur_block_out));
-    # hputi8(r_stat.p_buf,"GPUMCNT",mcnt);
-    hashpipe_status_unlock(r_status);
+    hashpipe_status_buf_lock_unlock(r_status) do 
+			hputi4(status.p_buf, Cstring(pointer("GPUBLKIN")), Cint(cur_block_in));
+			hputs(status.p_buf, status_key, "waiting");
+			hputi4(status.p_buf, Cstring(pointer("GPUBKOUT")), Cint(cur_block_out));
+			# hputi8(r_stat.p_buf,"GPUMCNT",mcnt);
+	end
 	# sleep(1);
     #     // Wait for new input block to be filled
     #     while ((rv=demo1_input_databuf_wait_filled(db_in, curblock_in)) != HASHPIPE_OK) {
@@ -80,9 +80,9 @@ while true
         # TODO: Finish checking
     end
 
-    hashpipe_status_lock(r_status);
-    hputs(status.p_buf, status_key, "processing gpu");
-    hashpipe_status_unlock(r_status);
+	hashpipe_status_buf_lock_unlock(r_status) do
+    	hputs(status.p_buf, status_key, "processing gpu");
+	end
 
     println("\nInput DB Block $cur_block_in filled")
 

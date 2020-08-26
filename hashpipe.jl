@@ -136,7 +136,7 @@ end
 
 # include finally clause to always unlock status buffer
 
-function hashpipe_status_buf_lock_unlock(f::Function, st::Ptr{hashpipe_status_t})
+function hashpipe_status_buf_lock_unlock(f::Function, st::Ref{hashpipe_status_t})
         try
             hashpipe_status_lock(st)
             f() # or f(st) TODO: test which of these is better
