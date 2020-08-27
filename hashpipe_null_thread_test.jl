@@ -47,8 +47,10 @@ display(status)
 
 input_db = hashpipe_databuf_attach(instance_id, input_db_id)
 println(status.p_buf)
+time_per_block = 1
 
 while true
+	tick = time_ns()
 
     hashpipe_status_buf_lock_unlock(r_status) do 
 			hputi4(status.p_buf, Cstring(pointer("GPUBLKIN")), Cint(cur_block_in));
@@ -56,20 +58,6 @@ while true
 			hputi4(status.p_buf, Cstring(pointer("GPUBKOUT")), Cint(cur_block_out));
 			# hputi8(r_stat.p_buf,"GPUMCNT",mcnt);
 	end
-	# sleep(1);
-    #     // Wait for new input block to be filled
-    #     while ((rv=demo1_input_databuf_wait_filled(db_in, curblock_in)) != HASHPIPE_OK) {
-    #         if (rv==HASHPIPE_TIMEOUT) {
-    #             hashpipe_status_lock(r_status);
-    #             hputs(r_stap_buf, status_key, "blocked");
-    #             hashpipe_status_unlock(r_status);
-    #             continue;
-    #         } else {
-    #             hashpipe_error(__FUNCTION__, "error waiting for filled databuf");
-    #             pthread_exit(NULL);
-    #             break;
-    #         }
-    #     }
 
     while (rv=hashpipe_databuf_wait_filled(input_db, cur_block_in)) != HASHPIPE_OK
         if rv==HASHPIPE_TIMEOUT
@@ -82,12 +70,13 @@ while true
 
 	hashpipe_status_buf_lock_unlock(r_status) do
     	hputs(status.p_buf, status_key, "processing gpu");
+    	#hputs(status.p_buf, "T/BLKMS", time_per_block);
 	end
 
-    println("\nInput DB Block $cur_block_in filled")
-
-    
-    
     hashpipe_databuf_set_free(input_db, cur_block_in)
     global cur_block_in = (cur_block_in + 1) % N_INPUT_BLOCKS
+	tock = time_ns()
+	global time_per_block = Int(tock - tick) / 1e6
+	print("Elapsed (ms): ",time_per_block) 
 end
+
