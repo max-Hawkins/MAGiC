@@ -26,8 +26,8 @@ const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
   
 # looked into using StaticArrays, but stated large arrays are best kept as Array
 mutable struct hpguppi_input_block_t
-    hdr::NTuple{BLOCK_HDR_SIZE, Cchar}
-    data::NTuple{BLOCK_DATA_SIZE, Int8}
+    hdr::Ptr{Int8}
+    data::Ptr{Int8}
 end
 
 mutable struct hpguppi_input_databuf_t
@@ -64,6 +64,12 @@ function parse_commandline()
 	return args
 end
 
+function get_block_arrays(p_input_db)
+    blocks_array = Array{N_INPUT_BLOCKS, hpguppi_input_block_t}[]
+    p_blocks = sizeof(hashpipe_databuf_t) + padding_size 
+
+end
+
 function main()
 	args = parse_commandline()
 	
@@ -84,6 +90,9 @@ function main()
 	display(status)
 
 	input_db = hashpipe_databuf_attach(instance_id, input_db_id)
+    
+    get_block_arrays(input_db)
+
 	println(status.p_buf)
 	time_per_block = 1
 
@@ -117,5 +126,6 @@ function main()
 		print("Elapsed (ms): ",time_per_block) 
 	end
 end
+
 main()
 
