@@ -5,7 +5,7 @@ const ALIGNMENT_SIZE = 4096
 const N_INPUT_BLOCKS = 24
 const BLOCK_HDR_SIZE = 5*80*512
 const BLOCK_DATA_SIZE = 128*1024*1024
-const padding_size = ALIGNMENT_SIZE - (sizeof(hashpipe_databuf_t)%ALIGNMENT_SIZE)
+const PADDING_SIZE = ALIGNMENT_SIZE - (sizeof(hashpipe_databuf_t)%ALIGNMENT_SIZE)
 const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
 
 # typedef struct hpguppi_input_block {
@@ -25,15 +25,14 @@ const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
 #   } hpguppi_input_databuf_t;
   
 # looked into using StaticArrays, but stated large arrays are best kept as Array
-mutable struct hpguppi_input_block_t
-    hdr::Ptr{Int8}
-    data::Ptr{Int8}
+struct hpguppi_input_block_t
+    p_hdr::Ptr{Int8}
+    p_data::Ptr{Int8}
 end
 
 mutable struct hpguppi_input_databuf_t
-    p_header::hashpipe_databuf_t
-    padding::NTuple{padding_size, Int8}
-    p_blocks::Ptr{Any}
+    p_hpguppi_db::Ptr{hashpipe_databuf_t}
+    blocks::Array{hpguppi_input_block_t}
 end
 
 function parse_commandline()
@@ -64,10 +63,15 @@ function parse_commandline()
 	return args
 end
 
-function get_block_arrays(p_input_db)
-    blocks_array = Array{N_INPUT_BLOCKS, hpguppi_input_block_t}[]
-    p_blocks = sizeof(hashpipe_databuf_t) + padding_size 
-
+function databuf_init(p_input_db::Ptr{hashpipe_databuf_t})
+    blocks_array::Array{hpguppi_input_block_t} = []
+    p_blocks = p_input_db + sizeof(hashpipe_databuf_t) + PADDING_SIZE
+    for i = 0:N_INPUT_BLOCKS - 1
+        p_header = p_blocks + i * BLOCK_SIZE
+        p_data = p_header + BLOCK_HDR_SIZE
+        push!(blocks_array, hpguppi_input_block_t(p_header, p_data))
+    end
+    return hpguppi_input_databuf_t(p_input_db, blocks_array)
 end
 
 function main()
@@ -91,13 +95,12 @@ function main()
 
 	input_db = hashpipe_databuf_attach(instance_id, input_db_id)
     
-    get_block_arrays(input_db)
+    # get_block_arrays(input_db)
 
 	println(status.p_buf)
 	time_per_block = 1
 
 	while true
-		tick = time_ns()
 
 		hashpipe_status_buf_lock_unlock(r_status) do 
 				hputi4(status.p_buf, Cstring(pointer("GPUBLKIN")), Cint(cur_block_in));
@@ -113,10 +116,12 @@ function main()
 			end 
 			# TODO: Finish checking
 		end
+		
+        tick = time_ns()
 
 		hashpipe_status_buf_lock_unlock(r_status) do
 			hputs(status.p_buf, status_key, "processing gpu");
-			#hputs(status.p_buf, "T/BLKMS", time_per_block);
+			hputs(status.p_buf, "GPUBLKMS", string(time_per_block));
 		end
 
 		hashpipe_databuf_set_free(input_db, cur_block_in)
