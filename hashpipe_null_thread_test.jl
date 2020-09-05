@@ -1,4 +1,6 @@
 include("./hashpipe.jl")
+include("../jl-blio/src/GuppiRaw.jl")
+
 using ArgParse
 # HPGUPPI_DATABUF.h constants
 const ALIGNMENT_SIZE = 4096
@@ -26,14 +28,42 @@ const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
   
 # looked into using StaticArrays, but stated large arrays are best kept as Array
 struct hpguppi_input_block_t
-    p_hdr::Ptr{Int8}
-    p_data::Ptr{Int8}
+    p_hdr::Ptr{UInt8}
+    p_data::Ptr{Any}
 end
 
 mutable struct hpguppi_input_databuf_t
     p_hpguppi_db::Ptr{hashpipe_databuf_t}
     blocks::Array{hpguppi_input_block_t}
 end
+
+function get_data(input_block::hpguppi_input_block_t)
+    grh = GuppiRaw.Header()
+    # TODO: Fix Int8 conversion
+    buf = reshape(unsafe_wrap(Array, input_block.p_hdr, BLOCK_HDR_SIZE), (GuppiRaw.HEADER_REC_SIZE, :))
+    endidx = findfirst(c->buf[1:4,c] == GuppiRaw.END, 1:size(buf,2))
+
+    for i in 1:endidx-1                            
+        rec = String(buf[:,i])                       
+        k, v = split(rec, '=', limit=2)              
+        k = Symbol(lowercase(strip(k)))              
+        v = strip(v)                                 
+        if v[1] == '\''                              
+            v = strip(v, [' ', '\''])                  
+        elseif !isnothing(match(r"^[+-]?[0-9]+$", v))
+            v = parse(Int, v)                          
+        elseif !isnothing(tryparse(Float64, v))      
+            v = parse(Float64, v)                      
+        end                                          
+        grh[k] = v
+    end
+    # TODO: Make custom function in GuppiRaw.jl to do this parsing from a pointer. Figure out ideal array resizing for CUDA
+    model_array = Array(grh)
+    dims = size(model_array)
+    data = unsafe_wrap(Array{eltype(model_array)}, Ptr{eltype(model_array)}(input_block.p_data), dims)
+    return grh, data
+end
+
 
 function parse_commandline()
 	s = ArgParseSettings()
