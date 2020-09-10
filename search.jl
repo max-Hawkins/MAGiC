@@ -452,3 +452,20 @@ module Search
         return kurtosis_block
     end
 end
+
+#-------------------#
+# Spectral Kurtosis #
+# Ref: Gelu Nita    #
+#-------------------#
+"""
+Returns the spectral kurtosis values of an array of data.
+This spectral kurtosis algorithm is based off Gelu Nita's
+2010 paper: #TODO: Link
+"""
+function spectral_kurtosis(power_array, nints::Int)
+    sk = Array{Float16}(undef, size(power_array))
+
+    # sum_p  = sum
+    # sum_p2 = 
+    # return sk
+end

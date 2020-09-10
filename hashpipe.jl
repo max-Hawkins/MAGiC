@@ -1,7 +1,9 @@
 """
+hashpipe.jl
+
 C Hashpipe functions ported for Julia usability.
-Hashpipe written by Dave MacMahon: https://github.com/david-macmahon/hashpipe
-Note: These functions currently don't implement error checking.
+Written by Max Hawkins
+Hashpipe C code written by Dave MacMahon: https://github.com/david-macmahon/hashpipe
 """
 
 # Hashpipe error Codes
@@ -12,9 +14,28 @@ const global HASHPIPE_ERR_SYS    = -2 # Failed system call
 const global HASHPIPE_ERR_PARAM  = -3 # Parameter out of range
 const global HASHPIPE_ERR_KEY    = -4 # Requested key doesn't exist
 const global HASHPIPE_ERR_PACKET = -5 # Unexpected packet size
+
+"""Hashpipe databuf struct"""
+struct hashpipe_databuf_t
+    data_type::NTuple{64, UInt8}
+    header_size::Int # May need to change to Csize_t
+    block_size::Int # May need to change to Csize_t
+    n_block::Cint
+    shmid::Cint
+    semid::Cint
+end
+
 # Status constants
 const global HASHPIPE_STATUS_TOTAL_SIZE = 184320 # 2880 * 64
 const global HASHPIPE_STATUS_RECORD_SIZE = 80
+# HPGUPPI_DATABUF.h constants
+const ALIGNMENT_SIZE = 4096
+const N_INPUT_BLOCKS = 24
+const BLOCK_HDR_SIZE = 5*80*512
+const BLOCK_DATA_SIZE = 128*1024*1024
+const PADDING_SIZE = ALIGNMENT_SIZE - (sizeof(hashpipe_databuf_t)%ALIGNMENT_SIZE)
+const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
+
 
 """
 Hashpipe Status struct
@@ -34,14 +55,63 @@ mutable struct hashpipe_status_t
     p_buf::Ptr{UInt8}
 end
 
-"Hashpipe databuf struct"
-struct hashpipe_databuf_t
-    data_type::NTuple{64, UInt8}
-    header_size::Int # May need to change to Csize_t
-    block_size::Int # May need to change to Csize_t
-    n_block::Cint
-    shmid::Cint
-    semid::Cint
+"""
+hpguppi input block
+
+Used to hold the pointers to individual GuppiRaw
+header and data pointers.
+"""
+struct hpguppi_input_block_t
+    p_hdr::Ptr{UInt8}
+    p_data::Ptr{Any}
+end
+
+"""
+hpguppi input databuf
+
+
+"""
+mutable struct hpguppi_input_databuf_t
+    p_hpguppi_db::Ptr{hashpipe_databuf_t}
+    blocks::Array{hpguppi_input_block_t}
+end
+
+function databuf_init(p_input_db::Ptr{hashpipe_databuf_t})
+    blocks_array::Array{hpguppi_input_block_t} = []
+    p_blocks = p_input_db + sizeof(hashpipe_databuf_t) + PADDING_SIZE
+    for i = 0:N_INPUT_BLOCKS - 1
+        p_header = p_blocks + i * BLOCK_SIZE
+        p_data = p_header + BLOCK_HDR_SIZE
+        push!(blocks_array, hpguppi_input_block_t(p_header, p_data))
+    end
+    return hpguppi_input_databuf_t(p_input_db, blocks_array)
+end
+
+function get_data(input_block::hpguppi_input_block_t)
+    grh = GuppiRaw.Header()
+    # TODO: Fix Int8 conversion
+    buf = reshape(unsafe_wrap(Array, input_block.p_hdr, BLOCK_HDR_SIZE), (GuppiRaw.HEADER_REC_SIZE, :))
+    endidx = findfirst(c->buf[1:4,c] == GuppiRaw.END, 1:size(buf,2))
+
+    for i in 1:endidx-1                            
+        rec = String(buf[:,i])                       
+        k, v = split(rec, '=', limit=2)              
+        k = Symbol(lowercase(strip(k)))              
+        v = strip(v)                                 
+        if v[1] == '\''                              
+            v = strip(v, [' ', '\''])                  
+        elseif !isnothing(match(r"^[+-]?[0-9]+$", v))
+            v = parse(Int, v)                          
+        elseif !isnothing(tryparse(Float64, v))      
+            v = parse(Float64, v)                      
+        end                                          
+        grh[k] = v
+    end
+    # TODO: Make custom function in GuppiRaw.jl to do this parsing from a pointer. Figure out ideal array resizing for CUDA
+    model_array = Array(grh)
+    dims = size(model_array)
+    data = unsafe_wrap(Array{eltype(model_array)}, Ptr{eltype(model_array)}(input_block.p_data), dims)
+    return grh, data
 end
 
 #----------#
@@ -124,17 +194,6 @@ function hashpipe_status_unlock(p_hashpipe_status::Ref{hashpipe_status_t})
                     Int, (Ref{hashpipe_status_t},), p_hashpipe_status)
     return error
 end
-
-# TODO: Hashpipe status un/lock safe functions
-# make a function that takes a function as the first argument
-
-# do block after function
-# function foo(f::Function, x); printf(f(x)); end
-# foo(1) do x
-# println(2*x)
-# end\
-
-# include finally clause to always unlock status buffer
 
 function hashpipe_status_buf_lock_unlock(f::Function, st::Ref{hashpipe_status_t})
         try
@@ -284,7 +343,3 @@ function hputi4(p_hstring::Ptr{UInt8}, p_keyword::String, p_ival::Int)
                     p_hstring, Cstring(pointer(p_keyword)), Cint(p_ival))
     return error
 end
-#-------------#
-# Development #
-#-------------#
-
