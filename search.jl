@@ -3,12 +3,15 @@ Data processing algorithms for energy detection.
 NOTE: Most functions found here are in development and may not be usable.
 """ 
 module Search
-    # TODO: Strip data loading functions and make more usable for hashpipe.jl
     using Statistics
     using CUDA
     using Plots
     using Random
     using Printf
+    # For spectral kurtosis calculations
+    using Roots
+    using SpecialFunctions
+
     using Main.Blio.GuppiRaw
     using Main.Blio.Filterbank
 
@@ -451,21 +454,64 @@ module Search
 
         return kurtosis_block
     end
-end
 
-#-------------------#
-# Spectral Kurtosis #
-# Ref: Gelu Nita    #
-#-------------------#
-"""
-Returns the spectral kurtosis values of an array of data.
-This spectral kurtosis algorithm is based off Gelu Nita's
-2010 paper: #TODO: Link
-"""
-function spectral_kurtosis(power_array, nints::Int)
-    sk = Array{Float16}(undef, size(power_array))
+    
+    #-------------------#
+    # Spectral Kurtosis #
+    # Ref: Gelu Nita    #
+    #-------------------#
+    """
+    Returns the spectral kurtosis values of an array of data.
+    This spectral kurtosis algorithm is based off Gelu Nita's
+    2010 paper: #TODO: Link
+    """
+    function spectral_kurtosis(power_array, nints::Int)
+        sk = Array{Float16}(undef, size(power_array))
 
-    # sum_p  = sum
-    # sum_p2 = 
-    # return sk
+        # sum_p  = sum
+        # sum_p2 = 
+        # return sk
+    end
+
+    function upperRoot(x, m2, m3, p)
+        if (-(m3-2*m2^2)/m3+x)/(m3/2/m2) < 0
+            return 0
+        end
+        println((-(m3-2*m2^2)/m3+x)/(m3/2/m2))
+        return abs((1 - gamma_inc( (4 * m2^3)/m3^2, (-(m3-2*m2^2)/m3 + x)/(m3/2/m2), 1)[1]) -p)
+    end
+
+    function lowerRoot(x, m2, m3, p)
+        if (-(m3-2*m2^2)/m3+x)/(m3/2/m2) < 0
+            println("lower return 0")
+            return 0
+        end
+        println((-(m3-2*m2^2)/m3+x)/(m3/2/m2))
+        lower = abs(gamma_inc( (4 * m2^3)/m3^2, (-(m3-2*m2^2)/m3 + x)/(m3/2/m2), 1)[1] -p)
+        println("Lower: $lower")
+        return lower
+    end
+
+    """
+    calc_sk_thresholds
+
+    Calculates the asymmetric spectral kurtosis thresholds given an integration length.
+    Adapted from Gelu Nita's IDL code (https://github.com/Gelu-Nita/GSK/blob/master/gsk.pro) 
+    and Nick Joslyn's Python code (https://github.com/NickJoslyn/helpful-BL/edit/master/helpful_BL_programs.py)
+    """
+    function calc_sk_thresholds(M, N=1, d=1, p=0.0013499)
+        Nd = N * d
+
+        # Moment Calculations
+        m_1 = 1
+        m2 = (2*(M^2) * Nd * (1 + Nd) ) / ( (M - 1) * (6 + 5*M*Nd + (M^2)*(Nd^2)) )
+        m3 = (8*(M^3)*Nd * (1 + Nd) * (-2 + Nd * (-5 + M * (4+Nd)))) / (((M-1)^2) * (2+M*Nd) *(3+M*Nd)*(4+M*Nd)*(5+M*Nd))
+        m4 = (12*(M^4)*Nd*(1+Nd)*(24+Nd*(48+84*Nd+M*(-32+Nd*(-245-93*Nd+M*(125+Nd*(68+M+(3+M)*Nd))))))) / (((M-1)^3)*(2+M*Nd)*(3+M*Nd)*(4+M*Nd)*(5+M*Nd)*(6+M*Nd)*(7+M*Nd) )
+
+        upperThreshold = secant_method(x->upperRoot(x,m2,m3,p), 1, rtol=1e-8, maxevals=1000)
+        lowerThreshold = secant_method(x->lowerRoot(x,m2,m3,p), 1, rtol=1e-8, maxevals=1000)
+        #lowerThreshold = find_zero(x->lowerRoot(x,m2,m3,p), [0,1], Bisection())
+        #lowerThreshold = Roots.find_zero(x->lowerRoot(x, m2, m3, p), 1, rtol=1e-8, maxevals=1000)
+        return lowerThreshold, upperThreshold
+    end
 end
