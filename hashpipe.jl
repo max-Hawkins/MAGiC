@@ -5,7 +5,10 @@ C Hashpipe functions ported for Julia usability.
 Written by Max Hawkins
 Hashpipe C code written by Dave MacMahon: https://github.com/david-macmahon/hashpipe
 """
+module Hashpipe
 
+include("/home/mhawkins/jl-blio/src/GuppiRaw.jl")
+using .GuppiRaw
 # Hashpipe error Codes
 const global HASHPIPE_OK         =  0
 const global HASHPIPE_TIMEOUT    =  1 # Call timed out 
@@ -88,7 +91,7 @@ function databuf_init(p_input_db::Ptr{hashpipe_databuf_t})
 end
 
 function get_data(input_block::hpguppi_input_block_t)
-    grh = GuppiRaw.Header()
+    grh = Header()
     # TODO: Fix Int8 conversion
     buf = reshape(unsafe_wrap(Array, input_block.p_hdr, BLOCK_HDR_SIZE), (GuppiRaw.HEADER_REC_SIZE, :))
     endidx = findfirst(c->buf[1:4,c] == GuppiRaw.END, 1:size(buf,2))
@@ -343,3 +346,5 @@ function hputi4(p_hstring::Ptr{UInt8}, p_keyword::String, p_ival::Int)
                     p_hstring, Cstring(pointer(p_keyword)), Cint(p_ival))
     return error
 end
+
+end # Module Hashpipe

@@ -11,6 +11,8 @@ module Search
     # For spectral kurtosis calculations
     using Roots
     using SpecialFunctions
+    using SimpleRoots
+    using NLsolve
 
     using Main.Blio.GuppiRaw
     using Main.Blio.Filterbank
@@ -466,9 +468,10 @@ module Search
     2010 paper: #TODO: Link
     """
     function spectral_kurtosis(power_array, nints::Int)
-        sk = Array{Float16}(undef, size(power_array))
+        p_size = size(power_array)
+        sk = Array{Float16}(undef, p_size)
 
-        # sum_p  = sum
+        sum_p = dropdims(sum(reshape(power_array, (p_size[1], nints, p_size[2]//nints, p_size[3]), dims=2), dims=2)
         # sum_p2 = 
         # return sk
     end
@@ -482,12 +485,13 @@ module Search
     end
 
     function lowerRoot(x, m2, m3, p)
+        println("lower x: $x")
         if (-(m3-2*m2^2)/m3+x)/(m3/2/m2) < 0
             println("lower return 0")
             return 0
         end
         println((-(m3-2*m2^2)/m3+x)/(m3/2/m2))
-        lower = abs(gamma_inc( (4 * m2^3)/m3^2, (-(m3-2*m2^2)/m3 + x)/(m3/2/m2), 1)[1] -p)
+        lower = abs(gamma_inc( (4 * m2^3)/m3^2, (-(m3-2*m2^2)/m3 + x)/(m3/2/m2), 0)[1] -p)
         println("Lower: $lower")
         return lower
     end
@@ -508,9 +512,10 @@ module Search
         m3 = (8*(M^3)*Nd * (1 + Nd) * (-2 + Nd * (-5 + M * (4+Nd)))) / (((M-1)^2) * (2+M*Nd) *(3+M*Nd)*(4+M*Nd)*(5+M*Nd))
         m4 = (12*(M^4)*Nd*(1+Nd)*(24+Nd*(48+84*Nd+M*(-32+Nd*(-245-93*Nd+M*(125+Nd*(68+M+(3+M)*Nd))))))) / (((M-1)^3)*(2+M*Nd)*(3+M*Nd)*(4+M*Nd)*(5+M*Nd)*(6+M*Nd)*(7+M*Nd) )
 
-        upperThreshold = secant_method(x->upperRoot(x,m2,m3,p), 1, rtol=1e-8, maxevals=1000)
-        lowerThreshold = secant_method(x->lowerRoot(x,m2,m3,p), 1, rtol=1e-8, maxevals=1000)
-        #lowerThreshold = find_zero(x->lowerRoot(x,m2,m3,p), [0,1], Bisection())
+        upperThreshold = secant_method(x->upperRoot(x,m2,m3,p), 1, atol=1e-8, rtol=1e-8, maxevals=1000)
+        lowerThreshold = secant_method(x->lowerRoot(x,m2,m3,p), 1, atol=1e-4, rtol=1e-12, maxevals=1000)
+        #lowerThreshold = SimpleRoots.findzero(x->lowerRoot(x,m2,m3,p), [0,1])
+        #lowerThreshold = Roots.fzeros(x->lowerRoot(x,m2,m3,p), [0,100], rtol=1e-8, maxevals=1000)
         #lowerThreshold = Roots.find_zero(x->lowerRoot(x, m2, m3, p), 1, rtol=1e-8, maxevals=1000)
         return lowerThreshold, upperThreshold
     end
