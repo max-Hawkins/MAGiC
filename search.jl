@@ -480,10 +480,8 @@ module Search
         end
         new_dim_size = Int(p_size[dims] / nints)
 
-        # power2 = power_array .^ 2
-
         sum_p  = dropdims(sum(reshape(power_array,      (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
-        sum_p2 = dropdims(sum(reshape(power_array .^ 2     , (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
+        sum_p2 = dropdims(sum(reshape(power_array .^ 2, (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
         sk = @. ((nints + 1)/(nints - 1)) * ((nints * sum_p2)/(sum_p ^ 2) - 1)
         return sk
     end

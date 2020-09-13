@@ -91,7 +91,7 @@ function databuf_init(p_input_db::Ptr{hashpipe_databuf_t})
 end
 
 function get_data(input_block::hpguppi_input_block_t)
-    grh = Header()
+    grh = GuppiRaw.Header()
     # TODO: Fix Int8 conversion
     buf = reshape(unsafe_wrap(Array, input_block.p_hdr, BLOCK_HDR_SIZE), (GuppiRaw.HEADER_REC_SIZE, :))
     endidx = findfirst(c->buf[1:4,c] == GuppiRaw.END, 1:size(buf,2))
