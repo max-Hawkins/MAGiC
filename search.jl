@@ -14,8 +14,8 @@ module Search
     using SimpleRoots
     using NLsolve
 
-    using Main.Blio.GuppiRaw
-    using Main.Blio.Filterbank
+    using Blio.GuppiRaw
+    using Blio.Filterbank
 
     "CUDA-defined limit on number of threads per block." #TODO: See if 2080Ti is different
     const global MAX_THREADS_PER_BLOCK = 1024
@@ -467,13 +467,25 @@ module Search
     This spectral kurtosis algorithm is based off Gelu Nita's
     2010 paper: #TODO: Link
     """
-    function spectral_kurtosis(power_array, nints::Int)
+    function spectral_kurtosis(power_array, nints::Int, dims=2) #TODO: implement variations of dim - probably wouldn't be used
         p_size = size(power_array)
-        sk = Array{Float16}(undef, p_size)
+        if p_size[dims] % nints != 0
+            println("Selected dimension $dim is not divisible by nints $nints.")
+            nints -= p_size[dims] % nints
+            if(nints < 1 || nints > p_size[dims])
+                println("Could not calculate usable nints. Setting nints to 1.")
+                nints = 1
+            end 
+            println("New nints: $nints")
+        end
+        new_dim_size = Int(p_size[dims] / nints)
 
-        sum_p = dropdims(sum(reshape(power_array, (p_size[1], nints, p_size[2]//nints, p_size[3]), dims=2), dims=2)
-        # sum_p2 = 
-        # return sk
+        # power2 = power_array .^ 2
+
+        sum_p  = dropdims(sum(reshape(power_array,      (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
+        sum_p2 = dropdims(sum(reshape(power_array .^ 2     , (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
+        sk = @. ((nints + 1)/(nints - 1)) * ((nints * sum_p2)/(sum_p ^ 2) - 1)
+        return sk
     end
 
     function upperRoot(x, m2, m3, p)
