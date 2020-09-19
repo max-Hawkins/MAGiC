@@ -485,7 +485,10 @@ module Search
         sk = @. ((nints + 1)/(nints - 1)) * ((nints * sum_p2)/(sum_p ^ 2) - 1)
         return sk
     end
-
+    
+    """
+    CAlculate the upper root for finding the upper SK threshold given an integration length and p.
+    """
     function upperRoot(x, m2, m3, p)
         if (-(m3-2*m2^2)/m3+x)/(m3/2/m2) < 0
             return 0
@@ -494,6 +497,9 @@ module Search
         return abs((1 - gamma_inc( (4 * m2^3)/m3^2, (-(m3-2*m2^2)/m3 + x)/(m3/2/m2), 1)[1]) -p)
     end
 
+    """
+    Calculate the lower root for finding the lower SK threshold given an integration length and p.
+    """
     function lowerRoot(x, m2, m3, p)
         println("lower x: $x")
         if (-(m3-2*m2^2)/m3+x)/(m3/2/m2) < 0

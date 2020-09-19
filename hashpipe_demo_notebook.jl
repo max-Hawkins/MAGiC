@@ -42,7 +42,7 @@ hp_databuf_num = 2
 begin 
 	p_input_db = Hashpipe.hashpipe_databuf_attach(0,2);
 	input_db = Hashpipe.databuf_init(p_input_db);
-	grh, raw_data = Hashpipe.get_data(input_db.blocks[4]);
+	grh, raw_data = Hashpipe.get_data(input_db.blocks[3]);
 	size(raw_data)
 end
 
@@ -50,7 +50,8 @@ end
 power = abs2.(Array{Complex{Int32}}(raw_data));
 
 # ╔═╡ 87a1962e-f602-11ea-37a1-f96f23b1f41a
-grh.nants
+grh.tbin * grh.
+
 
 # ╔═╡ 7fd891f8-f494-11ea-22bb-d734af134c18
 maximum(power)
@@ -104,8 +105,14 @@ heatmap(disp_avg_power[1:1024,1:256])
 # ╔═╡ 9fb6e33c-f499-11ea-0e36-91e1ad3def19
 size(power)
 
+# ╔═╡ 808797e2-f9dd-11ea-3593-570577bd00a2
+@bind sk_pol html"<input type='radio'>"
+
 # ╔═╡ 38ca937a-f605-11ea-2a0a-25897a39c96b
 @bind expo html"<input type='range' max=15>"
+
+# ╔═╡ 961f870e-f9dd-11ea-2ab4-1d01a22e0312
+sk_lower, sk_upper = (0.9676684770523931,1.0339584931405572) #Search.calc_sk_thresholds(2^expo) Need to use preset value until lookup table is created
 
 # ╔═╡ 09dea1d6-f606-11ea-0ff0-a72a809b569a
 @bind sk_disp_ant html"<input type='range' min=1 max=64>"
@@ -113,10 +120,31 @@ size(power)
 # ╔═╡ d5e5db12-f592-11ea-3fed-cf4251f4c50d
 begin 
 	sk = Main.workspace3.Search.spectral_kurtosis(power,2^expo);
-	heatmap(sk[1,:,:,sk_disp_ant], 
+	sk_array = sk[2,:,:,sk_disp_ant]
+	
+	#SK plot
+	sk_plot = heatmap(sk_array, 
 		title="Spectral Kurtosis - Antenna: $sk_disp_ant Nints: $(2^expo)",
 		xlabel="Channel",
 		ylabel="Time")
+	
+	function sk_mask(sk_value)::Int8
+		if(sk_value > sk_upper)
+			return 1
+		elseif(sk_value < sk_lower)
+			return -1
+		end
+		return 0
+	end
+	
+	#SK mask plot
+	sk_mask_array = map(sk_mask, sk_array)
+	sk_mask_plot = heatmap(sk_mask_array, 
+		title="Spectral Kurtosis Mask - Antenna: $sk_disp_ant Nints: $(2^expo)",
+		xlabel="Channel",
+		ylabel="Time",
+		clim=(-1,1))
+	plot(sk_plot, sk_mask_plot, layout=(2,1))
 end
 
 # ╔═╡ Cell order:
@@ -147,6 +175,8 @@ end
 # ╠═a235300e-f495-11ea-24cd-81d25398aed6
 # ╠═be4ce3aa-f494-11ea-220f-8350fda08d4b
 # ╠═9fb6e33c-f499-11ea-0e36-91e1ad3def19
+# ╠═808797e2-f9dd-11ea-3593-570577bd00a2
 # ╠═38ca937a-f605-11ea-2a0a-25897a39c96b
+# ╠═961f870e-f9dd-11ea-2ab4-1d01a22e0312
 # ╠═09dea1d6-f606-11ea-0ff0-a72a809b569a
 # ╠═d5e5db12-f592-11ea-3fed-cf4251f4c50d
