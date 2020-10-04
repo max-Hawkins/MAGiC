@@ -4,6 +4,7 @@ NOTE: Most functions found here are in development and may not be usable.
 """ 
 module Search
     using Statistics
+    using BenchmarkTools
     using CUDA
     using Plots
     using Random
@@ -14,8 +15,8 @@ module Search
     using SimpleRoots
     using NLsolve
 
-    using Blio.GuppiRaw
-    using Blio.Filterbank
+    using Main.Blio.GuppiRaw
+    using Main.Blio.Filterbank
 
     "CUDA-defined limit on number of threads per block." #TODO: See if 2080Ti is different
     const global MAX_THREADS_PER_BLOCK = 1024
@@ -470,7 +471,7 @@ module Search
     function spectral_kurtosis(power_array, nints::Int, dims=2) #TODO: implement variations of dim - probably wouldn't be used
         p_size = size(power_array)
         if p_size[dims] % nints != 0
-            println("Selected dimension $dim is not divisible by nints $nints.")
+            println("Selected dimension $dims is not divisible by nints $nints.")
             nints -= p_size[dims] % nints
             if(nints < 1 || nints > p_size[dims])
                 println("Could not calculate usable nints. Setting nints to 1.")
@@ -521,7 +522,26 @@ module Search
     """
     function calc_sk_thresholds(M, N=1, d=1, p=0.0013499)
         Nd = N * d
-
+        if((p==0.0013499) && ((expo = log(2,M)) % 1 == 0))
+            # Create look-up for sk_thresholds when p=0.0013499
+            sk_thresholds_p0013499 = [-0.9491207671598745 4.451577708347232;
+                0 0;
+                0 0;
+                0 0;
+                0 0;
+                0.6007695589928923 2.090134929397901;
+                0.660792564715807 1.7174329413624772;
+                0.7249537831632763 1.4733902568788164;
+                0.7859397345336379 1.3156809453381224;
+                0.8383281718532006 1.2131125067280124;
+                0.880396432714329 1.1454837933406543;
+                0.9127540558562938 1.1002263183494991;
+                0.9369638151287253 1.069536473556811;
+                0.9547530883154925 1.0484995859651514;
+                0.9676684770523931 1.0339584931405572;
+                0.9769695436055237 1.0238440998251523;]
+            return Tuple(sk_thresholds_p0013499[Int(expo), :])
+        end
         # Moment Calculations
         m_1 = 1
         m2 = (2*(M^2) * Nd * (1 + Nd) ) / ( (M - 1) * (6 + 5*M*Nd + (M^2)*(Nd^2)) )
@@ -534,5 +554,16 @@ module Search
         #lowerThreshold = Roots.fzeros(x->lowerRoot(x,m2,m3,p), [0,100], rtol=1e-8, maxevals=1000)
         #lowerThreshold = Roots.find_zero(x->lowerRoot(x, m2, m3, p), 1, rtol=1e-8, maxevals=1000)
         return lowerThreshold, upperThreshold
+    end
+
+    function test_mem_transfer(N=134217728)
+        data = Array{Int8}(zeros(N))
+        time = @belapsed CuArray($data)
+        data_rate = Base.format_bytes(sizeof(data) / time) * "/s"
+        println("Naive CuArray: ", data_rate)
+
+        gpu_data = CuArray(data)
+        time = @belapsed copyto!($gpu_data, $data)
+        data_rate = Base.format_bytes(sizeof(data) / time) * "/s"
     end
 end

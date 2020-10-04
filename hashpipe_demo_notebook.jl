@@ -22,7 +22,7 @@ push!(LOAD_PATH,"/home/mhawkins/MAGiC/")
 # ╔═╡ 782c7b3a-f591-11ea-2226-03ff2eac5908
 begin
 	include("/home/mhawkins/jl-blio/src/GuppiRaw.jl")
-	using Pkg, Statistics, Plots, Blio
+	using Pkg, Statistics, Plots, Blio, CUDA
 	include("hashpipe.jl")
 end
 
@@ -50,7 +50,9 @@ end
 power = abs2.(Array{Complex{Int32}}(raw_data));
 
 # ╔═╡ 87a1962e-f602-11ea-37a1-f96f23b1f41a
-grh.tbin * grh.
+a = 1
+
+# ╔═╡ afc490d2-fd11-11ea-192c-4f956667f56c
 
 
 # ╔═╡ 7fd891f8-f494-11ea-22bb-d734af134c18
@@ -158,6 +160,7 @@ end
 # ╠═d212d4c4-f487-11ea-0412-c70aaa045350
 # ╠═2a8ff99a-f494-11ea-36c6-690a33c35eb4
 # ╠═87a1962e-f602-11ea-37a1-f96f23b1f41a
+# ╠═afc490d2-fd11-11ea-192c-4f956667f56c
 # ╠═7fd891f8-f494-11ea-22bb-d734af134c18
 # ╠═318cae2a-f494-11ea-2d3d-35e8a4265497
 # ╠═62a0bbda-f494-11ea-2230-c7507f82bb96
