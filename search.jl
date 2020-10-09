@@ -491,7 +491,7 @@ module Search
     end
     
     """
-    CAlculate the upper root for finding the upper SK threshold given an integration length and p.
+    Calculate the upper root for finding the upper SK threshold given an integration length and p.
     """
     function upperRoot(x, m2, m3, p)
         if (-(m3-2*m2^2)/m3+x)/(m3/2/m2) < 0
@@ -562,40 +562,70 @@ module Search
 
     # Data for each spectral kurtosis array
     struct sk_array_t
-        p_data_gpu::CuArray
-        size::NTuple
+        sk_data_gpu::CuArray
         nint::Int
-        sk_low_lim::Float
-        sk_up_lim::Float
+        sk_low_lim::Float32
+        sk_up_lim::Float32
     end
     # Data necessary for calculating spectral kurtosis on GPU
     struct sk_plan_t
-        p_complex_data_cpu::Array
-        p_complex_data_gpu::CuArray
-        complex_length::Int
-        p_power_gpu::CuArray
-        p_power2_gpu::CuArray
+        complex_data_gpu::CuArray
+        power_gpu::CuArray
+        power2_gpu::CuArray
         sk_arrays::Array{sk_array_t}
     end
 
-    function create_sk_plan(complex_data, nint_array, dims=2)
-        p_complex_cpu = pointer(complex_data)
-        complex_size = size(complex_data)
+    # Create high-level structs containing information needed during real-time SK processing
+    # Allocates GPU memory as well
+    function create_sk_plan(raw_eltype, raw_size, nint_array, dims=2)
+        complex_eltype = raw_eltype
+        complex_size = raw_size
+        power_eltype  = Int32 # Allows for long summation
+        power2_eltype = Int32 # Allows for long summation
+
         # Allocate spacce for complex data on GPU and wrap with CuArray
-        p_buf_complex_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, sizeof(complex_size))
-        p_complex_gpu = convert(eltype(complex_data), p_buf_complex_gpu)
+        p_buf_complex_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(complex_size)*sizeof(complex_eltype))
+        # Need to convert because by default CUDA.Mem.alloc creates CuPtr{nothing}
+        p_complex_gpu = convert(CuPtr{complex_eltype}, p_buf_complex_gpu)
+        # wrap data for later easier use
+        complex_gpu = unsafe_wrap(CuArray, p_complex_gpu, complex_size)
+        
+        # Allocate space for intermediate power sk_arrays
+        # Power array
+        p_buf_power_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(complex_size)*sizeof(power_eltype))
+        p_power_gpu = convert(CuPtr{power_eltype}, p_buf_power_gpu)
+        power_gpu = unsafe_wrap(CuArray, p_power_gpu, complex_size)
+        # Power squared array
+        p_buf_power2_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(complex_size)*sizeof(power2_eltype))
+        p_power2_gpu = convert(CuPtr{power2_eltype}, p_buf_power2_gpu)
+        power2_gpu = unsafe_wrap(CuArray, p_power2_gpu, complex_size)
+
+        # Create sk_array_t for each
         sk_arrays = []
-
         for nint in nint_array
-            sk_size = complex_size
-            sk_size[dims] = Int(floor(complex_size / nint))
+            sk_eltype = Float16
+            sk_size = (complex_size[1],
+                        Int(floor(complex_size[dims] / nint)),
+                        complex_size[3],
+                        complex_size[4])  # TODO, WARNING: NOT dims variable
 
-            p_sk_array_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(sk_size))
+            p_buf_sk_array_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(sk_size)*sizeof(sk_eltype))
+            p_sk_array_gpu = convert(CuPtr{sk_eltype}, p_buf_sk_array_gpu)
+            sk_data_gpu = unsafe_wrap(CuArray, p_sk_array_gpu, sk_size)
+
             low_lim, up_lim = calc_sk_thresholds(nint)
-            println("Integration Length: $nint")
-            sk_array = sk_array_t()
+            sk_array = sk_array_t(sk_data_gpu,
+                        nint,
+                        low_lim,
+                        up_lim)
+            push!(sk_arrays, sk_array)
         end
-        println("Min p: $(minimum(power))  Min p2: $(minimum(power2))")
+        # Create sk_plan struct
+        sk_plan = sk_plan_t(complex_gpu,
+                        power_gpu,
+                        power2_gpu,
+                        sk_arrays)
+        return sk_plan
     end
 end
 
