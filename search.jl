@@ -18,6 +18,9 @@ module Search
     using Main.Blio.GuppiRaw
     using Main.Blio.Filterbank
 
+    # Enum type for the current MeerKAT data format to help with indexing
+    @enum MK_DIMS::Int8 D_POL=1 D_TIME D_CHAN D_ANT
+
     "CUDA-defined limit on number of threads per block." #TODO: See if 2080Ti is different
     const global MAX_THREADS_PER_BLOCK = 1024
 
@@ -524,6 +527,7 @@ module Search
         Nd = N * d
         if((p==0.0013499) && ((expo = log(2,M)) % 1 == 0))
             # Create look-up for sk_thresholds when p=0.0013499
+            # Index: 2^i integration length (Remember: 1-indexed in Julia)
             sk_thresholds_p0013499 = [-0.9491207671598745 4.451577708347232;
                 0 0;
                 0 0;
@@ -556,14 +560,53 @@ module Search
         return lowerThreshold, upperThreshold
     end
 
-    function test_mem_transfer(N=134217728)
-        data = Array{Int8}(zeros(N))
-        time = @belapsed CuArray($data)
-        data_rate = Base.format_bytes(sizeof(data) / time) * "/s"
-        println("Naive CuArray: ", data_rate)
-
-        gpu_data = CuArray(data)
-        time = @belapsed copyto!($gpu_data, $data)
-        data_rate = Base.format_bytes(sizeof(data) / time) * "/s"
+    # Data for each spectral kurtosis array
+    struct sk_array_t
+        p_data_gpu::CuArray
+        size::NTuple
+        nint::Int
+        sk_low_lim::Float
+        sk_up_lim::Float
     end
+    # Data necessary for calculating spectral kurtosis on GPU
+    struct sk_plan_t
+        p_complex_data_cpu::Array
+        p_complex_data_gpu::CuArray
+        complex_length::Int
+        p_power_gpu::CuArray
+        p_power2_gpu::CuArray
+        sk_arrays::Array{sk_array_t}
+    end
+
+    function create_sk_plan(complex_data, nint_array, dims=2)
+        p_complex_cpu = pointer(complex_data)
+        complex_size = size(complex_data)
+        # Allocate spacce for complex data on GPU and wrap with CuArray
+        p_buf_complex_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, sizeof(complex_size))
+        p_complex_gpu = convert(eltype(complex_data), p_buf_complex_gpu)
+        sk_arrays = []
+
+        for nint in nint_array
+            sk_size = complex_size
+            sk_size[dims] = Int(floor(complex_size / nint))
+
+            p_sk_array_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(sk_size))
+            low_lim, up_lim = calc_sk_thresholds(nint)
+            println("Integration Length: $nint")
+            sk_array = sk_array_t()
+        end
+        println("Min p: $(minimum(power))  Min p2: $(minimum(power2))")
+    end
+end
+
+function gen_data(_size=(2,32768,16,64), sig_chans=[])::AbstractArray
+    normal_data = rand(Normal(0,1), _size) .+ rand(Normal(0,1), _size)im
+    data = Array{Complex{Int8}}(undef, _size)
+    @. data =  Int8(floor(real(normal_data * 16))) + Int8(floor(imag(normal_data * 16)))im
+
+    # Insert signal into channels
+    for chan in sig_chans
+        data[:,:,:, chan] = rand(Complex{Int8}, _size[1:3])
+    end
+    return data
 end
