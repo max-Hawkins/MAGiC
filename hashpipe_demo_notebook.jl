@@ -27,7 +27,10 @@ begin
 end
 
 # ╔═╡ a5acc0cc-f48f-11ea-297c-d34901987cec
-using Main.workspace3.Hashpipe
+using Main.workspace22.Hashpipe
+
+# ╔═╡ 515ba00e-1232-11eb-16f1-7d9502e4f5c1
+using BenchmarkTools
 
 # ╔═╡ f4250d22-f58e-11ea-3633-43fa2864c296
 include("/home/mhawkins/MAGiC/search.jl")
@@ -53,7 +56,7 @@ power = abs2.(Array{Complex{Int32}}(raw_data));
 a = 1
 
 # ╔═╡ afc490d2-fd11-11ea-192c-4f956667f56c
-
+grh.obsfreq
 
 # ╔═╡ 7fd891f8-f494-11ea-22bb-d734af134c18
 maximum(power)
@@ -113,15 +116,18 @@ size(power)
 # ╔═╡ 38ca937a-f605-11ea-2a0a-25897a39c96b
 @bind expo html"<input type='range' max=15>"
 
+# ╔═╡ a97024e6-0fca-11eb-20b7-41a1219f9ceb
+
+
 # ╔═╡ 961f870e-f9dd-11ea-2ab4-1d01a22e0312
-sk_lower, sk_upper = (0.9676684770523931,1.0339584931405572) #Search.calc_sk_thresholds(2^expo) Need to use preset value until lookup table is created
+sk_lower, sk_upper = Search.calc_sk_thresholds(2^expo)
 
 # ╔═╡ 09dea1d6-f606-11ea-0ff0-a72a809b569a
 @bind sk_disp_ant html"<input type='range' min=1 max=64>"
 
 # ╔═╡ d5e5db12-f592-11ea-3fed-cf4251f4c50d
 begin 
-	sk = Main.workspace3.Search.spectral_kurtosis(power,2^expo);
+	sk = Search.spectral_kurtosis(power,2^expo);
 	sk_array = sk[2,:,:,sk_disp_ant]
 	
 	#SK plot
@@ -148,6 +154,92 @@ begin
 		clim=(-1,1))
 	plot(sk_plot, sk_mask_plot, layout=(2,1))
 end
+
+# ╔═╡ 4097bfc4-0f70-11eb-3fde-4d69e940d3f9
+sum(sk_array .< sk_lower)
+
+# ╔═╡ 0d799578-0f71-11eb-2c0f-05748784eb29
+sum(sk_array .> sk_upper)
+
+# ╔═╡ add4cd66-1231-11eb-2104-a1e7bac0dbd9
+@benchmark Search.spectral_kurtosis(power, 32768) 
+
+# ╔═╡ 381e32fa-1232-11eb-15cb-d5940afe8444
+power_gpu = CuArray(power);
+
+# ╔═╡ 7d145c2c-1232-11eb-3839-734a669e0925
+@benchmark Search.spectral_kurtosis(power_gpu, 32768)
+
+# ╔═╡ 4179b452-1235-11eb-12b4-610d01ef7262
+sk_plan = Search.create_sk_plan(Complex{Int8}, size(raw_data), [256, 2048, 16384, 32768]);
+
+# ╔═╡ 9c66de88-1237-11eb-32f0-59796da93462
+begin
+	function display(a::Search.sk_array_t)
+		println("Nint: $(a.nint)")
+		println("SK Upper Limit: $(a.sk_up_lim)")	
+		println("SK Lower Limit: $(a.sk_low_lim)")	
+	end
+end
+
+# ╔═╡ 60282c7c-1237-11eb-0ac7-e7031445c568
+begin
+	# Takes ~1ms per SK array of certain integration length
+	function exec_sk_plan(plan::Search.sk_plan_t)
+		nint_min = 256 #slightly longer than 1ms
+		
+		# Transfer raw data to GPU
+		unsafe_copyto!(plan.complex_data_gpu.ptr, pointer(raw_data), length(raw_data))
+		
+		tic = time_ns() # To calculate execution time without transfer
+		
+		# Populate power and power-squared arrays
+		@. plan.power_gpu = abs2(plan.complex_data_gpu)
+		@. plan.power2_gpu = plan.power_gpu ^ 2
+		
+		for sk_array in plan.sk_arrays
+			println("=============")
+			display(sk_array)
+			
+			sk_array.sk_data_gpu = Search.spectral_kurtosis(plan.power_gpu, sk_array.nint) # Unoptimized!!! TODO: Sum power/power2 as nint increases
+		end
+		toc = time_ns()
+		println("Time withouth transfer: $((toc-tic) / 1E9)")
+	end
+end
+
+# ╔═╡ 97bc6692-1240-11eb-0a03-933307758e29
+begin
+	# Hit info struct for later saving back into the databuf header 
+	#	to later save raw data segments to disk
+	mutable struct hit_info_t
+		freq_chan_i
+		freq_chan_f
+		t_i
+		t_f
+		pizazz #Interestingness value (0-1)
+	end
+end
+
+# ╔═╡ b9066556-123f-11eb-15ac-bfb24274fff1
+begin
+	# Implement "interestingness" function on generated data for later saving
+	# Generates array with dimensions of raw_data except for time which is
+	# 	minimum time of interest per t_step
+	# Later has an adjustable threshold that, once exceeded, is masked for
+	# 	saving on the GPU. The time and frequency (maybe antenna and polarization too?)
+	#	is saved in a struct hit_info_t along with the original interestingness value
+	# 	to help out with later data triaging
+	#An array of hit_info_t is passed back to the CPU
+	#	for saving/writing to disk or buffer space
+	# 
+	function hit_mask(plan::Search.sk_plan_t)
+		
+	end
+end
+
+# ╔═╡ 0c1a7f96-1238-11eb-37ca-1187f8c6c64e
+@elapsed exec_sk_plan(sk_plan)
 
 # ╔═╡ Cell order:
 # ╠═36cb96dc-f48b-11ea-3e7c-4d91d2ceac72
@@ -180,6 +272,19 @@ end
 # ╠═9fb6e33c-f499-11ea-0e36-91e1ad3def19
 # ╠═808797e2-f9dd-11ea-3593-570577bd00a2
 # ╠═38ca937a-f605-11ea-2a0a-25897a39c96b
+# ╠═a97024e6-0fca-11eb-20b7-41a1219f9ceb
 # ╠═961f870e-f9dd-11ea-2ab4-1d01a22e0312
 # ╠═09dea1d6-f606-11ea-0ff0-a72a809b569a
 # ╠═d5e5db12-f592-11ea-3fed-cf4251f4c50d
+# ╠═4097bfc4-0f70-11eb-3fde-4d69e940d3f9
+# ╠═0d799578-0f71-11eb-2c0f-05748784eb29
+# ╠═515ba00e-1232-11eb-16f1-7d9502e4f5c1
+# ╠═add4cd66-1231-11eb-2104-a1e7bac0dbd9
+# ╠═7d145c2c-1232-11eb-3839-734a669e0925
+# ╠═381e32fa-1232-11eb-15cb-d5940afe8444
+# ╠═4179b452-1235-11eb-12b4-610d01ef7262
+# ╠═9c66de88-1237-11eb-32f0-59796da93462
+# ╠═60282c7c-1237-11eb-0ac7-e7031445c568
+# ╠═97bc6692-1240-11eb-0a03-933307758e29
+# ╠═b9066556-123f-11eb-15ac-bfb24274fff1
+# ╠═0c1a7f96-1238-11eb-37ca-1187f8c6c64e

@@ -15,8 +15,8 @@ module Search
     using SimpleRoots
     using NLsolve
 
-    using Main.Blio.GuppiRaw
-    using Main.Blio.Filterbank
+    using Blio.GuppiRaw
+    using Blio.Filterbank
 
     # Enum type for the current MeerKAT data format to help with indexing
     @enum MK_DIMS::Int8 D_POL=1 D_TIME D_CHAN D_ANT
@@ -561,14 +561,14 @@ module Search
     end
 
     # Data for each spectral kurtosis array
-    struct sk_array_t
+    mutable struct sk_array_t
         sk_data_gpu::CuArray
         nint::Int
         sk_low_lim::Float32
         sk_up_lim::Float32
     end
     # Data necessary for calculating spectral kurtosis on GPU
-    struct sk_plan_t
+    mutable struct sk_plan_t
         complex_data_gpu::CuArray
         power_gpu::CuArray
         power2_gpu::CuArray
@@ -577,13 +577,13 @@ module Search
 
     # Create high-level structs containing information needed during real-time SK processing
     # Allocates GPU memory as well
-    function create_sk_plan(raw_eltype, raw_size, nint_array, dims=2)
+    function create_sk_plan(raw_eltype, raw_size, nint_array, dims=2, t_min=0.001)
         complex_eltype = raw_eltype
-        complex_size = raw_size
+        complex_size = raw_size # TODO: Calculate using raw header
         power_eltype  = Int32 # Allows for long summation
         power2_eltype = Int32 # Allows for long summation
 
-        # Allocate spacce for complex data on GPU and wrap with CuArray
+        # Allocate space for complex data on GPU and wrap with CuArray
         p_buf_complex_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(complex_size)*sizeof(complex_eltype))
         # Need to convert because by default CUDA.Mem.alloc creates CuPtr{nothing}
         p_complex_gpu = convert(CuPtr{complex_eltype}, p_buf_complex_gpu)
