@@ -182,13 +182,30 @@ begin
 	end
 end
 
+# ╔═╡ c358cff6-13cc-11eb-1aac-33f55a0a3c38
+
+
 # ╔═╡ 60282c7c-1237-11eb-0ac7-e7031445c568
 begin
 	# Takes ~1ms per SK array of certain integration length
-	function exec_sk_plan(plan::Search.sk_plan_t)
+	function exec_plan(plan::Search.sk_plan_t)
 		nint_min = 256 #slightly longer than 1ms
 		
+		_size = size(plan.complex_data_gpu)
+		sk_pizazz_size = (_size[1], Int(floor(_size[2] / nint_min)), _size[3], _size[4]) # TODO: change to not use int and floor
+		println(sk_pizazz_size)
+		sk_pizazz_type = Float16
+		
+		# Allocate memory for SK pizazz score. TODO: Make per plan or global?
+		p_buf_sk_pizazz_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(sk_pizazz_size)*sizeof(sk_pizazz_type))
+		p_sk_pizazz_gpu = convert(CuPtr{sk_pizazz_type}, p_buf_sk_pizazz_gpu)
+        # wrap data for later easier use
+        sk_pizazz_gpu = unsafe_wrap(CuArray, p_sk_pizazz_gpu, sk_pizazz_size)
+		
+		# Calculate the 
+		
 		# Transfer raw data to GPU
+		# TODO: Later, do this outside of any plan executions
 		unsafe_copyto!(plan.complex_data_gpu.ptr, pointer(raw_data), length(raw_data))
 		
 		tic = time_ns() # To calculate execution time without transfer
@@ -202,11 +219,20 @@ begin
 			display(sk_array)
 			
 			sk_array.sk_data_gpu = Search.spectral_kurtosis(plan.power_gpu, sk_array.nint) # Unoptimized!!! TODO: Sum power/power2 as nint increases
+			
+			# Add to pizazz array
+			
+			
 		end
 		toc = time_ns()
 		println("Time withouth transfer: $((toc-tic) / 1E9)")
 	end
 end
+
+# ╔═╡ fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
+CUDA.memory
+
+
 
 # ╔═╡ 97bc6692-1240-11eb-0a03-933307758e29
 begin
@@ -230,7 +256,7 @@ begin
 	# 	saving on the GPU. The time and frequency (maybe antenna and polarization too?)
 	#	is saved in a struct hit_info_t along with the original interestingness value
 	# 	to help out with later data triaging
-	#An array of hit_info_t is passed back to the CPU
+	# An array of hit_info_t is passed back to the CPU
 	#	for saving/writing to disk or buffer space
 	# 
 	function hit_mask(plan::Search.sk_plan_t)
@@ -239,7 +265,10 @@ begin
 end
 
 # ╔═╡ 0c1a7f96-1238-11eb-37ca-1187f8c6c64e
-@elapsed exec_sk_plan(sk_plan)
+@elapsed exec_plan(sk_plan)
+
+# ╔═╡ e1c66120-13cb-11eb-1497-57bd7e86405e
+
 
 # ╔═╡ Cell order:
 # ╠═36cb96dc-f48b-11ea-3e7c-4d91d2ceac72
@@ -284,7 +313,10 @@ end
 # ╠═381e32fa-1232-11eb-15cb-d5940afe8444
 # ╠═4179b452-1235-11eb-12b4-610d01ef7262
 # ╠═9c66de88-1237-11eb-32f0-59796da93462
+# ╠═c358cff6-13cc-11eb-1aac-33f55a0a3c38
 # ╠═60282c7c-1237-11eb-0ac7-e7031445c568
+# ╠═fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
 # ╠═97bc6692-1240-11eb-0a03-933307758e29
 # ╠═b9066556-123f-11eb-15ac-bfb24274fff1
 # ╠═0c1a7f96-1238-11eb-37ca-1187f8c6c64e
+# ╠═e1c66120-13cb-11eb-1497-57bd7e86405e
