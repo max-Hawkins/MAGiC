@@ -26,8 +26,8 @@ begin
 	include("hashpipe.jl")
 end
 
-# ╔═╡ a5acc0cc-f48f-11ea-297c-d34901987cec
-using Main.workspace22.Hashpipe
+# ╔═╡ 3b4ad73c-1587-11eb-33b8-9b41cddd8eec
+using Main.workspace3.Hashpipe
 
 # ╔═╡ 515ba00e-1232-11eb-16f1-7d9502e4f5c1
 using BenchmarkTools
@@ -53,7 +53,7 @@ end
 power = abs2.(Array{Complex{Int32}}(raw_data));
 
 # ╔═╡ 87a1962e-f602-11ea-37a1-f96f23b1f41a
-a = 1
+
 
 # ╔═╡ afc490d2-fd11-11ea-192c-4f956667f56c
 grh.obsfreq
@@ -104,6 +104,12 @@ size(incoherent_sum)
 # ╔═╡ a235300e-f495-11ea-24cd-81d25398aed6
 heatmap(incoherent_sum[1,:,1,1:16], title="Incoherent Sum")
 
+# ╔═╡ 45789cee-1591-11eb-1b90-092db5a7ddb8
+bp = mean(incoherent_sum[:,:,:,1:16], dims=2)[1,1,1,:]
+
+# ╔═╡ 93795b72-1591-11eb-02dd-d9252d405fbe
+plot(bp)
+
 # ╔═╡ be4ce3aa-f494-11ea-220f-8350fda08d4b
 heatmap(disp_avg_power[1:1024,1:256])
 
@@ -111,7 +117,7 @@ heatmap(disp_avg_power[1:1024,1:256])
 size(power)
 
 # ╔═╡ 808797e2-f9dd-11ea-3593-570577bd00a2
-@bind sk_pol html"<input type='radio'>"
+@bind sk_pol html"<input type='radio'>" #TODO: Implement radio polarization selection
 
 # ╔═╡ 38ca937a-f605-11ea-2a0a-25897a39c96b
 @bind expo html"<input type='range' max=15>"
@@ -162,13 +168,13 @@ sum(sk_array .< sk_lower)
 sum(sk_array .> sk_upper)
 
 # ╔═╡ add4cd66-1231-11eb-2104-a1e7bac0dbd9
-@benchmark Search.spectral_kurtosis(power, 32768) 
+@elapsed Search.spectral_kurtosis(power, 32768) 
 
 # ╔═╡ 381e32fa-1232-11eb-15cb-d5940afe8444
 power_gpu = CuArray(power);
 
 # ╔═╡ 7d145c2c-1232-11eb-3839-734a669e0925
-@benchmark Search.spectral_kurtosis(power_gpu, 32768)
+@elapsed Search.spectral_kurtosis(power_gpu, 32768)
 
 # ╔═╡ 4179b452-1235-11eb-12b4-610d01ef7262
 sk_plan = Search.create_sk_plan(Complex{Int8}, size(raw_data), [256, 2048, 16384, 32768]);
@@ -192,7 +198,7 @@ begin
 		nint_min = 256 #slightly longer than 1ms
 		
 		_size = size(plan.complex_data_gpu)
-		sk_pizazz_size = (_size[1], Int(floor(_size[2] / nint_min)), _size[3], _size[4]) # TODO: change to not use int and floor
+		sk_pizazz_size = (1, Int(floor(_size[2] / nint_min)), _size[3], 1) # TODO: change to not use int and floor
 		println(sk_pizazz_size)
 		sk_pizazz_type = Float16
 		
@@ -210,6 +216,10 @@ begin
 		
 		tic = time_ns() # To calculate execution time without transfer
 		
+		n_sk_array_pols = length(plan.sk_arrays) * size(_size, 1)
+		pizazz_over_lim::Float16  = 0.5 / n_sk_array_pols
+		pizazz_under_lim::Float16 = 1 / n_sk_array_pols
+		
 		# Populate power and power-squared arrays
 		@. plan.power_gpu = abs2(plan.complex_data_gpu)
 		@. plan.power2_gpu = plan.power_gpu ^ 2
@@ -220,18 +230,57 @@ begin
 			
 			sk_array.sk_data_gpu = Search.spectral_kurtosis(plan.power_gpu, sk_array.nint) # Unoptimized!!! TODO: Sum power/power2 as nint increases
 			
-			# Add to pizazz array
+			sk_pizazz_lower = 1
+			sk_pizazz_upper = 0.5
 			
+			# Add to pizazz array
+			for t in 1:size(sk_array.sk_data_gpu, 2)
+				println("size: $t")
+				t_i = 1 + (t - 1) * sk_array.nint
+				t_f = t * sk_array.nint
+				println("$(t_i) : $(t_f)")
+				sk_pizazz_gpu[1, t_i:t_f, :, 1] += sum(sk_array.sk_data_gpu[1,t, :, 1] .> sk_array.sk_up_lim) * sk_pizazz_upper + sum(sk_array.sk_data_gpu[1,t, :, 1] .< sk_array.sk_low_lim) * sk_pizazz_lower
+				
+			end
 			
 		end
+		
+		
 		toc = time_ns()
 		println("Time withouth transfer: $((toc-tic) / 1E9)")
+		return sk_pizazz_gpu
 	end
 end
 
-# ╔═╡ fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
-CUDA.memory
+# ╔═╡ 5b9285d4-1597-11eb-12f4-6f3e93584da9
+size(sk_plan.sk_pizazz_gpu)
 
+# ╔═╡ c14d8b58-1592-11eb-1706-21ab9260064b
+a = rand(2,3,4)
+
+# ╔═╡ 2503c04c-1596-11eb-14fd-a9d429c9e742
+ifelse.(a<0.5, 1, 0)
+
+# ╔═╡ 91d5af3c-1596-11eb-2b76-e969d8ac1721
+sum(a.<0.5, dims=2) * 4
+
+# ╔═╡ 8858ba20-1592-11eb-2eb1-4381c593d38c
+
+
+# ╔═╡ 949f36d8-1592-11eb-289c-39279d70a873
+
+
+# ╔═╡ 7e38d4d6-158c-11eb-056f-e38cdee1a2b2
+ sk_pizazz = exec_plan(sk_plan)
+
+
+# ╔═╡ fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
+for sk in sk_plan.sk_arrays
+	println(sk.nint)
+	
+end
+
+# ╔═╡ 18e46bfc-158b-11eb-19d3-9bc69368a2d8
 
 
 # ╔═╡ 97bc6692-1240-11eb-0a03-933307758e29
@@ -274,13 +323,13 @@ end
 # ╠═36cb96dc-f48b-11ea-3e7c-4d91d2ceac72
 # ╠═7aeea79e-f48d-11ea-314c-3d88b920173c
 # ╠═782c7b3a-f591-11ea-2226-03ff2eac5908
-# ╠═a5acc0cc-f48f-11ea-297c-d34901987cec
 # ╠═f4250d22-f58e-11ea-3633-43fa2864c296
 # ╠═ff828e60-f58e-11ea-21b7-05feba7a7f40
 # ╠═351112e6-f5fc-11ea-1453-11c042b2bef7
+# ╠═3b4ad73c-1587-11eb-33b8-9b41cddd8eec
 # ╠═d212d4c4-f487-11ea-0412-c70aaa045350
 # ╠═2a8ff99a-f494-11ea-36c6-690a33c35eb4
-# ╠═87a1962e-f602-11ea-37a1-f96f23b1f41a
+# ╟─87a1962e-f602-11ea-37a1-f96f23b1f41a
 # ╠═afc490d2-fd11-11ea-192c-4f956667f56c
 # ╠═7fd891f8-f494-11ea-22bb-d734af134c18
 # ╠═318cae2a-f494-11ea-2d3d-35e8a4265497
@@ -297,6 +346,8 @@ end
 # ╠═a7203906-f495-11ea-0a37-051bf1620a5c
 # ╠═e810355c-f499-11ea-29bd-7169859b8ef4
 # ╠═a235300e-f495-11ea-24cd-81d25398aed6
+# ╠═45789cee-1591-11eb-1b90-092db5a7ddb8
+# ╠═93795b72-1591-11eb-02dd-d9252d405fbe
 # ╠═be4ce3aa-f494-11ea-220f-8350fda08d4b
 # ╠═9fb6e33c-f499-11ea-0e36-91e1ad3def19
 # ╠═808797e2-f9dd-11ea-3593-570577bd00a2
@@ -315,7 +366,15 @@ end
 # ╠═9c66de88-1237-11eb-32f0-59796da93462
 # ╠═c358cff6-13cc-11eb-1aac-33f55a0a3c38
 # ╠═60282c7c-1237-11eb-0ac7-e7031445c568
+# ╠═5b9285d4-1597-11eb-12f4-6f3e93584da9
+# ╠═c14d8b58-1592-11eb-1706-21ab9260064b
+# ╠═2503c04c-1596-11eb-14fd-a9d429c9e742
+# ╠═91d5af3c-1596-11eb-2b76-e969d8ac1721
+# ╟─8858ba20-1592-11eb-2eb1-4381c593d38c
+# ╟─949f36d8-1592-11eb-289c-39279d70a873
+# ╠═7e38d4d6-158c-11eb-056f-e38cdee1a2b2
 # ╠═fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
+# ╟─18e46bfc-158b-11eb-19d3-9bc69368a2d8
 # ╠═97bc6692-1240-11eb-0a03-933307758e29
 # ╠═b9066556-123f-11eb-15ac-bfb24274fff1
 # ╠═0c1a7f96-1238-11eb-37ca-1187f8c6c64e
