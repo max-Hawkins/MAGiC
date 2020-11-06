@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.11.12
+# v0.12.7
 
 using Markdown
 using InteractiveUtils
@@ -168,13 +168,13 @@ sum(sk_array .< sk_lower)
 sum(sk_array .> sk_upper)
 
 # ╔═╡ add4cd66-1231-11eb-2104-a1e7bac0dbd9
-@elapsed Search.spectral_kurtosis(power, 32768) 
-
-# ╔═╡ 381e32fa-1232-11eb-15cb-d5940afe8444
-power_gpu = CuArray(power);
+@time Search.spectral_kurtosis(power, 32768);
 
 # ╔═╡ 7d145c2c-1232-11eb-3839-734a669e0925
-@elapsed Search.spectral_kurtosis(power_gpu, 32768)
+#CUDA.@time Search.spectral_kurtosis(power_gpu, 32768)
+
+# ╔═╡ 381e32fa-1232-11eb-15cb-d5940afe8444
+#power_gpu = CuArray(power);
 
 # ╔═╡ 4179b452-1235-11eb-12b4-610d01ef7262
 sk_plan = Search.create_sk_plan(Complex{Int8}, size(raw_data), [256, 2048, 16384, 32768]);
@@ -221,7 +221,7 @@ begin
 		pizazz_under_lim::Float16 = 1 / n_sk_array_pols
 		
 		# Populate power and power-squared arrays
-		@. plan.power_gpu = abs2(plan.complex_data_gpu)
+		@. plan.power_gpu = abs2(Complex{Int16}.(plan.complex_data_gpu))
 		@. plan.power2_gpu = plan.power_gpu ^ 2
 		
 		for sk_array in plan.sk_arrays
@@ -234,32 +234,68 @@ begin
 			sk_pizazz_upper = 0.5
 			
 			# Add to pizazz array
-			for t in 1:size(sk_array.sk_data_gpu, 2)
-				println("size: $t")
-				t_i = 1 + (t - 1) * sk_array.nint
-				t_f = t * sk_array.nint
-				println("$(t_i) : $(t_f)")
-				sk_pizazz_gpu[1, t_i:t_f, :, 1] += sum(sk_array.sk_data_gpu[1,t, :, 1] .> sk_array.sk_up_lim) * sk_pizazz_upper + sum(sk_array.sk_data_gpu[1,t, :, 1] .< sk_array.sk_low_lim) * sk_pizazz_lower
+# 			for t in 1:size(sk_array.sk_data_gpu, 2)
+# 				println("size: $t")
+# 				t_i = 1 + (t - 1) * sk_array.nint
+# 				t_f = t * sk_array.nint
+# 				println("$(t_i) : $(t_f)")
+# 				sk_pizazz_gpu[1, t_i:t_f, :, 1] += sum(sk_array.sk_data_gpu[1,t, :, 1] .> sk_array.sk_up_lim) * sk_pizazz_upper + sum(sk_array.sk_data_gpu[1,t, :, 1] .< sk_array.sk_low_lim) * sk_pizazz_lower
 				
-			end
+# 			end
 			
 		end
 		
 		
 		toc = time_ns()
 		println("Time withouth transfer: $((toc-tic) / 1E9)")
-		return sk_pizazz_gpu
+		#return sk_pizazz_gpu
 	end
 end
 
 # ╔═╡ 5b9285d4-1597-11eb-12f4-6f3e93584da9
-size(sk_plan.sk_pizazz_gpu)
+begin
+	sk_a = sk_plan.sk_arrays[1]
+	for t in 1:size(sk_a.sk_data_gpu, 2)
+					println("size: $t")
+					t_i = 1 + (t - 1) * sk_a.nint
+					t_f = t * sk_a.nint
+					println("$(t_i) : $(t_f)")
+					s = sum(sk_a.sk_data_gpu[1,t, :, 1] .> sk_a.sk_up_lim)
+					println(s)
+	end
+end
+
+# ╔═╡ d5d39dfc-17ba-11eb-2c9c-9b4520e934c2
+#sk_test = Search.spectral_kurtosis(sk_plan.power_gpu, 2048)
+
+# ╔═╡ d2bfcd0e-17ba-11eb-094e-1d6a9864ec01
+size(sk_plan.sk_arrays[1].sk_data_gpu)
+
+# ╔═╡ 82ad8f16-1a69-11eb-0d65-81c7cbf3f634
+@bind sk_array_index html"<input type='range' min=1 max=4>"
+
+# ╔═╡ d07e7e96-17ba-11eb-03bf-27fa8ea470b4
+begin
+	pizazz_high = sum(sum(sk_plan.sk_arrays[sk_array_index].sk_data_gpu .> sk_plan.sk_arrays[sk_array_index].sk_up_lim, dims=1), dims = 4);
+	pizazz_low = sum(sum(sk_plan.sk_arrays[sk_array_index].sk_data_gpu .< sk_plan.sk_arrays[sk_array_index].sk_low_lim, dims=1), dims = 4);
+	#heatmap((pizazz_high.+pizazz_low)[1,:,:,1])
+	sk_up_plot = heatmap(pizazz_high[1,:,:,], 
+		title="Spectral Kurtosis Upper Cutoff",
+		xlabel="Channel",
+		ylabel="Time")
+	
+	sk_low_plot = heatmap(pizazz_low[1,:,:,], 
+		title="Spectral Kurtosis Lower Cutoff",
+		xlabel="Channel",
+		ylabel="Time")
+	plot(sk_up_plot, sk_low_plot, layout=(2,1))
+end
 
 # ╔═╡ c14d8b58-1592-11eb-1706-21ab9260064b
 a = rand(2,3,4)
 
 # ╔═╡ 2503c04c-1596-11eb-14fd-a9d429c9e742
-ifelse.(a<0.5, 1, 0)
+#CUDA.@time begin sk_plan.power_gpu = abs2.(sk_plan.complex_data_gpu); end
 
 # ╔═╡ 91d5af3c-1596-11eb-2b76-e969d8ac1721
 sum(a.<0.5, dims=2) * 4
@@ -271,7 +307,7 @@ sum(a.<0.5, dims=2) * 4
 
 
 # ╔═╡ 7e38d4d6-158c-11eb-056f-e38cdee1a2b2
- sk_pizazz = exec_plan(sk_plan)
+ # @benchmark CUDA.@sync blocking=false exec_plan(sk_plan)
 
 
 # ╔═╡ fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
@@ -309,15 +345,21 @@ begin
 	#	for saving/writing to disk or buffer space
 	# 
 	function hit_mask(plan::Search.sk_plan_t)
+		min_t_dim_size = 128
+		sk_pizazz = CuArray(128, size(plan.sk_arrays[1].sk_data_gpu, dims=3))
 		
+		low_pizazz_coef = 1
+		up_pizazz_coef  = 0.5
+		println("SK Pizazz size: $(size(sk_pizazz))")
+		
+		for sk_array in plan.sk_arrays
+			pizazz_high = sum(sum(sk_plan.sk_arrays[1].sk_data_gpu .> sk_plan.sk_arrays[1].sk_up_lim, dims=1), dims = 4);
+		end
 	end
 end
 
 # ╔═╡ 0c1a7f96-1238-11eb-37ca-1187f8c6c64e
 @elapsed exec_plan(sk_plan)
-
-# ╔═╡ e1c66120-13cb-11eb-1497-57bd7e86405e
-
 
 # ╔═╡ Cell order:
 # ╠═36cb96dc-f48b-11ea-3e7c-4d91d2ceac72
@@ -367,6 +409,10 @@ end
 # ╠═c358cff6-13cc-11eb-1aac-33f55a0a3c38
 # ╠═60282c7c-1237-11eb-0ac7-e7031445c568
 # ╠═5b9285d4-1597-11eb-12f4-6f3e93584da9
+# ╠═d5d39dfc-17ba-11eb-2c9c-9b4520e934c2
+# ╠═d2bfcd0e-17ba-11eb-094e-1d6a9864ec01
+# ╠═82ad8f16-1a69-11eb-0d65-81c7cbf3f634
+# ╠═d07e7e96-17ba-11eb-03bf-27fa8ea470b4
 # ╠═c14d8b58-1592-11eb-1706-21ab9260064b
 # ╠═2503c04c-1596-11eb-14fd-a9d429c9e742
 # ╠═91d5af3c-1596-11eb-2b76-e969d8ac1721
@@ -378,4 +424,3 @@ end
 # ╠═97bc6692-1240-11eb-0a03-933307758e29
 # ╠═b9066556-123f-11eb-15ac-bfb24274fff1
 # ╠═0c1a7f96-1238-11eb-37ca-1187f8c6c64e
-# ╠═e1c66120-13cb-11eb-1497-57bd7e86405e
