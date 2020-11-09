@@ -41,6 +41,9 @@ hp_status_num = 0
 # ╔═╡ 351112e6-f5fc-11ea-1453-11c042b2bef7
 hp_databuf_num = 2
 
+# ╔═╡ e64be040-22c5-11eb-2e14-f9ef519bc106
+
+
 # ╔═╡ d212d4c4-f487-11ea-0412-c70aaa045350
 begin 
 	p_input_db = Hashpipe.hashpipe_databuf_attach(0,2);
@@ -177,7 +180,7 @@ sum(sk_array .> sk_upper)
 #power_gpu = CuArray(power);
 
 # ╔═╡ 4179b452-1235-11eb-12b4-610d01ef7262
-sk_plan = Search.create_sk_plan(Complex{Int8}, size(raw_data), [256, 2048, 16384, 32768]);
+sk_plan = Search.create_sk_plan(Complex{Int8}, size(raw_data), [256, 2048, 4096, 16384, 32768]);
 
 # ╔═╡ 9c66de88-1237-11eb-32f0-59796da93462
 begin
@@ -278,6 +281,7 @@ size(sk_plan.sk_arrays[1].sk_data_gpu)
 begin
 	pizazz_high = sum(sum(sk_plan.sk_arrays[sk_array_index].sk_data_gpu .> sk_plan.sk_arrays[sk_array_index].sk_up_lim, dims=1), dims = 4);
 	pizazz_low = sum(sum(sk_plan.sk_arrays[sk_array_index].sk_data_gpu .< sk_plan.sk_arrays[sk_array_index].sk_low_lim, dims=1), dims = 4);
+	println(size(pizazz_low))
 	#heatmap((pizazz_high.+pizazz_low)[1,:,:,1])
 	sk_up_plot = heatmap(pizazz_high[1,:,:,], 
 		title="Spectral Kurtosis Upper Cutoff",
@@ -291,30 +295,14 @@ begin
 	plot(sk_up_plot, sk_low_plot, layout=(2,1))
 end
 
-# ╔═╡ c14d8b58-1592-11eb-1706-21ab9260064b
-a = rand(2,3,4)
-
 # ╔═╡ 2503c04c-1596-11eb-14fd-a9d429c9e742
 #CUDA.@time begin sk_plan.power_gpu = abs2.(sk_plan.complex_data_gpu); end
-
-# ╔═╡ 91d5af3c-1596-11eb-2b76-e969d8ac1721
-sum(a.<0.5, dims=2) * 4
 
 # ╔═╡ 8858ba20-1592-11eb-2eb1-4381c593d38c
 
 
 # ╔═╡ 949f36d8-1592-11eb-289c-39279d70a873
 
-
-# ╔═╡ 7e38d4d6-158c-11eb-056f-e38cdee1a2b2
- # @benchmark CUDA.@sync blocking=false exec_plan(sk_plan)
-
-
-# ╔═╡ fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
-for sk in sk_plan.sk_arrays
-	println(sk.nint)
-	
-end
 
 # ╔═╡ 18e46bfc-158b-11eb-19d3-9bc69368a2d8
 
@@ -345,21 +333,76 @@ begin
 	#	for saving/writing to disk or buffer space
 	# 
 	function hit_mask(plan::Search.sk_plan_t)
-		min_t_dim_size = 128
-		sk_pizazz = CuArray(128, size(plan.sk_arrays[1].sk_data_gpu, dims=3))
-		
-		low_pizazz_coef = 1
+		complex_size = size(plan.complex_data_gpu)
+		sk_pizazz = CuArray{Float64}(undef, 
+					(1,
+					size(plan.sk_arrays[1].sk_data_gpu,2),
+					complex_size[3],
+					1))
+
+		low_pizazz_coef = 25.0
 		up_pizazz_coef  = 0.5
-		println("SK Pizazz size: $(size(sk_pizazz))")
+		
+		max_pizazz = (low_pizazz_coef + up_pizazz_coef) * complex_size[1] * complex_size[4] * length(plan.sk_arrays)
 		
 		for sk_array in plan.sk_arrays
-			pizazz_high = sum(sum(sk_plan.sk_arrays[1].sk_data_gpu .> sk_plan.sk_arrays[1].sk_up_lim, dims=1), dims = 4);
+			println("i: $(size(sk_array.sk_data_gpu))")
+			
+			pizazz_up = sum(sum(sk_array.sk_data_gpu .> sk_array.sk_up_lim, dims=1), dims = 4) .* up_pizazz_coef;
+			pizazz_low = sum(sum(sk_array.sk_data_gpu .< sk_array.sk_low_lim, dims=1), dims = 4) .* low_pizazz_coef;
+			
+			if sk_array == plan.sk_arrays[1]
+				sk_pizazz .= pizazz_up .+ pizazz_low
+				
+			else 
+				total_pizazz = pizazz_up .+ pizazz_low
+				
+				temp_n_time = size(sk_array.sk_data_gpu,2)
+				stride = Int(size(sk_pizazz, 2) / temp_n_time)
+				println("Stride: $stride")
+				
+				# TODO: Figure out how to broadcast with addition to larger dimensions
+				# for i in 1:temp_n_time
+				# 	println("I: $i")
+				# 	start = (i - 1) * stride + 1
+				# 	stop  = i * stride
+				# 	println("$start , $stop")
+				# 	println(size(total_pizazz))
+				# 	println(size(sk_pizazz[1, start:stop, : , 1]))
+				# 	#sk_pizazz[1, start:stop, : , 1] += total_pizazz[1, i, :, 1]
+				# end
+				
+				for i in 1:size(sk_pizazz, 2)
+					index = Int(ceil(i / temp_n_time))
+					sk_pizazz[1, i, :, 1] .+= total_pizazz[1, index, :, 1]
+				end
+			end
+			#println(typeof(pizazz_up))
+			# pizazz_up  .*= up_pizazz_coef;
+			# pizazz_low .*= low_pizazz_coef;
+			# println(typeof(pizazz_up))
+			
 		end
+		sk_pizazz ./= max_pizazz # Scales sk_pizazz to 0-1
+		return sk_pizazz
 	end
 end
 
 # ╔═╡ 0c1a7f96-1238-11eb-37ca-1187f8c6c64e
-@elapsed exec_plan(sk_plan)
+CUDA.@elapsed exec_plan(sk_plan)
+
+# ╔═╡ acb463e8-22b3-11eb-0ce6-bda9fcfb21a7
+CUDA.@elapsed hit_mask(sk_plan)
+
+# ╔═╡ bac8e8e0-22b4-11eb-3036-09495ecc2c1d
+begin
+	xtick = 
+	hit_data = hit_mask(sk_plan)
+	heatmap(transpose(hit_data[1,:,:,1]),
+	xaxis=(font(10), "Time (ms)", 0:grh.tbin*128*1000*32:1000*grh.tbin*32768),
+	yaxis=(font(10), "Frequency (Coarse Channel)"),
+	title="SK Interestingness of 1 GUPPI Block of VELA/MeerKAT Data")
+end
 
 # ╔═╡ Cell order:
 # ╠═36cb96dc-f48b-11ea-3e7c-4d91d2ceac72
@@ -369,6 +412,7 @@ end
 # ╠═ff828e60-f58e-11ea-21b7-05feba7a7f40
 # ╠═351112e6-f5fc-11ea-1453-11c042b2bef7
 # ╠═3b4ad73c-1587-11eb-33b8-9b41cddd8eec
+# ╠═e64be040-22c5-11eb-2e14-f9ef519bc106
 # ╠═d212d4c4-f487-11ea-0412-c70aaa045350
 # ╠═2a8ff99a-f494-11ea-36c6-690a33c35eb4
 # ╟─87a1962e-f602-11ea-37a1-f96f23b1f41a
@@ -413,14 +457,12 @@ end
 # ╠═d2bfcd0e-17ba-11eb-094e-1d6a9864ec01
 # ╠═82ad8f16-1a69-11eb-0d65-81c7cbf3f634
 # ╠═d07e7e96-17ba-11eb-03bf-27fa8ea470b4
-# ╠═c14d8b58-1592-11eb-1706-21ab9260064b
 # ╠═2503c04c-1596-11eb-14fd-a9d429c9e742
-# ╠═91d5af3c-1596-11eb-2b76-e969d8ac1721
 # ╟─8858ba20-1592-11eb-2eb1-4381c593d38c
 # ╟─949f36d8-1592-11eb-289c-39279d70a873
-# ╠═7e38d4d6-158c-11eb-056f-e38cdee1a2b2
-# ╠═fb6f9ee2-13d4-11eb-0f5c-955ec4476a51
 # ╟─18e46bfc-158b-11eb-19d3-9bc69368a2d8
 # ╠═97bc6692-1240-11eb-0a03-933307758e29
 # ╠═b9066556-123f-11eb-15ac-bfb24274fff1
 # ╠═0c1a7f96-1238-11eb-37ca-1187f8c6c64e
+# ╠═acb463e8-22b3-11eb-0ce6-bda9fcfb21a7
+# ╠═bac8e8e0-22b4-11eb-3036-09495ecc2c1d

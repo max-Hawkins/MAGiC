@@ -627,6 +627,10 @@ module Search
                         sk_arrays)
         return sk_plan
     end
+
+    function test()
+        return "It worked"
+    end
 end
 
 function gen_data(_size=(2,32768,16,64), sig_chans=[])::AbstractArray
