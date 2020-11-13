@@ -573,15 +573,20 @@ module Search
         power_gpu::CuArray
         power2_gpu::CuArray
         sk_arrays::Array{sk_array_t}
+        sk_thresh::Float32
+        sk_pizazz_gpu::CuArray
     end
 
     # Create high-level structs containing information needed during real-time SK processing
     # Allocates GPU memory as well
-    function create_sk_plan(raw_eltype, raw_size, nint_array, dims=2, t_min=0.001)
+    function create_sk_plan(raw_eltype, raw_size, nint_array, sk_thresh; dims=2, t_min=0.001)
         complex_eltype = raw_eltype
         complex_size = raw_size # TODO: Calculate using raw header
         power_eltype  = Int32 # Allows for long summation
         power2_eltype = Int32 # Allows for long summation
+
+        # TODO: Calculate nint_min based off t_min
+        nint_min = 256
 
         # Allocate space for complex data on GPU and wrap with CuArray
         p_buf_complex_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(complex_size)*sizeof(complex_eltype))
@@ -599,6 +604,17 @@ module Search
         p_buf_power2_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(complex_size)*sizeof(power2_eltype))
         p_power2_gpu = convert(CuPtr{power2_eltype}, p_buf_power2_gpu)
         power2_gpu = unsafe_wrap(CuArray, p_power2_gpu, complex_size)
+
+        #Pizazz Array allocation
+		sk_pizazz_size = (1, Int(floor(complex_size[2] / nint_min)), complex_size[3], 1) # TODO: change to not use int and floor
+		println(sk_pizazz_size)
+		sk_pizazz_type = Float16
+		
+		# Allocate memory for SK pizazz score
+		p_buf_sk_pizazz_gpu = CUDA.Mem.alloc(CUDA.Mem.DeviceBuffer, prod(sk_pizazz_size)*sizeof(sk_pizazz_type))
+		p_sk_pizazz_gpu = convert(CuPtr{sk_pizazz_type}, p_buf_sk_pizazz_gpu)
+        # wrap data for later easier use
+        sk_pizazz_gpu = unsafe_wrap(CuArray, p_sk_pizazz_gpu, sk_pizazz_size)
 
         # Create sk_array_t for each
         sk_arrays = []
@@ -624,13 +640,93 @@ module Search
         sk_plan = sk_plan_t(complex_gpu,
                         power_gpu,
                         power2_gpu,
-                        sk_arrays)
+                        sk_arrays,
+                        sk_thresh,
+                        sk_pizazz_gpu)
         return sk_plan
     end
 
-    function test()
-        return "It worked"
+    function exec_plan(plan, data_ptr)	
+		# Transfer raw data to GPU
+        unsafe_copyto!(plan.complex_data_gpu.ptr,
+                        Ptr{eltype(plan.complex_data_gpu)}(data_ptr),
+                        length(plan.complex_data_gpu))
+		
+		tic = time_ns() # To calculate execution time without transfer
+				
+		# Populate power and power-squared arrays
+		@. plan.power_gpu = abs2(Complex{Int16}.(plan.complex_data_gpu))
+		@. plan.power2_gpu = plan.power_gpu ^ 2
+		
+		for sk_array in plan.sk_arrays
+			#println("=============")
+			#display(sk_array)		
+			sk_array.sk_data_gpu = Search.spectral_kurtosis(plan.power_gpu, sk_array.nint) # Unoptimized!!! TODO: Sum power/power2 as nint increases
+		end
+        
+        toc = time_ns()
+		#println("Time withouth transfer: $((toc-tic) / 1E9)")
     end
+
+    function create_hit_info(plan)
+        hits = findall(>(plan.sk_thresh), plan.sk_pizazz_gpu)
+        return hits
+    end
+    
+    #~3ms per integration length on GUPPI Block
+    # Return pizazz matrix
+    function hit_mask(plan)
+		complex_size = size(plan.complex_data_gpu)
+
+		low_pizazz_coef = 25.0
+		up_pizazz_coef  = 0.5
+		
+		max_pizazz = (low_pizazz_coef + up_pizazz_coef) * complex_size[1] * complex_size[4] * length(plan.sk_arrays)
+		
+		for sk_array in plan.sk_arrays
+			println("i: $(size(sk_array.sk_data_gpu))")
+			
+			pizazz_up = sum(sum(sk_array.sk_data_gpu .> sk_array.sk_up_lim, dims=1), dims = 4) .* up_pizazz_coef;
+			pizazz_low = sum(sum(sk_array.sk_data_gpu .< sk_array.sk_low_lim, dims=1), dims = 4) .* low_pizazz_coef;
+			
+			if sk_array == plan.sk_arrays[1]
+				plan.sk_pizazz_gpu .= pizazz_up .+ pizazz_low
+				
+			else 
+				total_pizazz = pizazz_up .+ pizazz_low
+				
+				temp_n_time = size(sk_array.sk_data_gpu,2)
+				stride = Int(size(plan.sk_pizazz_gpu, 2) / temp_n_time)
+				#println("Stride: $stride")
+				
+				# TODO: Figure out how to broadcast with addition to larger dimensions
+				# for i in 1:temp_n_time
+				# 	println("I: $i")
+				# 	start = (i - 1) * stride + 1
+				# 	stop  = i * stride
+				# 	println("$start , $stop")
+				# 	println(size(total_pizazz))
+				# 	println(size(plan.sk_pizazz_gpu[1, start:stop, : , 1]))
+				# 	#plan.sk_pizazz_gpu[1, start:stop, : , 1] += total_pizazz[1, i, :, 1]
+				# end
+				
+				for i in 1:size(plan.sk_pizazz_gpu, 2)
+					index = Int(ceil(i / temp_n_time))
+					plan.sk_pizazz_gpu[1, i, :, 1] .+= total_pizazz[1, index, :, 1]
+				end
+			end
+			
+		end
+        plan.sk_pizazz_gpu ./= max_pizazz # Scales plan.sk_pizazz_gpu to 0-1
+        
+        # Creates hit meta-data records for sending to the CPU
+
+        #TODO: place this function in here after timing
+        hits_metadata = create_hit_info(plan);
+
+		return hits_metadata
+	end
+
 end
 
 function gen_data(_size=(2,32768,16,64), sig_chans=[])::AbstractArray
