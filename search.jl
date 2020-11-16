@@ -471,7 +471,7 @@ module Search
     This spectral kurtosis algorithm is based off Gelu Nita's
     2010 paper: #TODO: Link
     """
-    function spectral_kurtosis(power_array, nints::Int, dims=2) #TODO: implement variations of dim - probably wouldn't be used
+    function spectral_kurtosis(power_array, p2_array, nints::Int, dims=2) #TODO: implement variations of dim - probably wouldn't be used
         p_size = size(power_array)
         if p_size[dims] % nints != 0
             println("Selected dimension $dims is not divisible by nints $nints.")
@@ -485,7 +485,7 @@ module Search
         new_dim_size = Int(p_size[dims] / nints)
 
         sum_p  = dropdims(sum(reshape(power_array,      (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
-        sum_p2 = dropdims(sum(reshape(power_array .^ 2, (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
+        sum_p2 = dropdims(sum(reshape(p2_array, (p_size[1], nints, new_dim_size, p_size[3], p_size[4])); dims=2), dims=2)
         sk = @. ((nints + 1)/(nints - 1)) * ((nints * sum_p2)/(sum_p ^ 2) - 1)
         return sk
     end
@@ -661,7 +661,7 @@ module Search
 		for sk_array in plan.sk_arrays
 			#println("=============")
 			#display(sk_array)		
-			sk_array.sk_data_gpu = Search.spectral_kurtosis(plan.power_gpu, sk_array.nint) # Unoptimized!!! TODO: Sum power/power2 as nint increases
+			sk_array.sk_data_gpu = Search.spectral_kurtosis(plan.power_gpu, plan.power2_gpu, sk_array.nint) # Unoptimized!!! TODO: Sum power/power2 as nint increases
 		end
         
         toc = time_ns()
@@ -684,7 +684,7 @@ module Search
 		max_pizazz = (low_pizazz_coef + up_pizazz_coef) * complex_size[1] * complex_size[4] * length(plan.sk_arrays)
 		
 		for sk_array in plan.sk_arrays
-			println("i: $(size(sk_array.sk_data_gpu))")
+			#println("i: $(size(sk_array.sk_data_gpu))")
 			
 			pizazz_up = sum(sum(sk_array.sk_data_gpu .> sk_array.sk_up_lim, dims=1), dims = 4) .* up_pizazz_coef;
 			pizazz_low = sum(sum(sk_array.sk_data_gpu .< sk_array.sk_low_lim, dims=1), dims = 4) .* low_pizazz_coef;

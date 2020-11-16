@@ -261,7 +261,7 @@ begin
 end
 
 # ╔═╡ d88c2eca-2571-11eb-1724-0b50006fb6bc
-sk_plan = Search.create_sk_plan(Complex{Int8}, size(raw_data), [256]);
+sk_plan = Search.create_sk_plan(Complex{Int8}, size(raw_data), [256, 2048, 32768], 0.06);
 
 # ╔═╡ 5b9285d4-1597-11eb-12f4-6f3e93584da9
 begin
@@ -302,9 +302,6 @@ CUDA.@elapsed hit_mask(sk_plan)
 
 # ╔═╡ 2fc55022-2577-11eb-2630-89d7de8ad500
 size(raw_data)
-
-# ╔═╡ 0ba6fc04-2577-11eb-358b-5b83ad4349ca
-Search.create_sk_plan(Complex{Int8}, size(raw_data), [256])
 
 # ╔═╡ 60282c7c-1237-11eb-0ac7-e7031445c568
 begin
@@ -425,7 +422,6 @@ hit_data
 # ╠═381e32fa-1232-11eb-15cb-d5940afe8444
 # ╠═d88c2eca-2571-11eb-1724-0b50006fb6bc
 # ╠═2fc55022-2577-11eb-2630-89d7de8ad500
-# ╠═0ba6fc04-2577-11eb-358b-5b83ad4349ca
 # ╠═9c66de88-1237-11eb-32f0-59796da93462
 # ╠═c358cff6-13cc-11eb-1aac-33f55a0a3c38
 # ╠═60282c7c-1237-11eb-0ac7-e7031445c568
