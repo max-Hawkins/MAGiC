@@ -18,11 +18,28 @@ module Search
     using Blio.GuppiRaw
     using Blio.Filterbank
 
+    using Main.Hashpipe
+
     # Enum type for the current MeerKAT data format to help with indexing
     @enum MK_DIMS::Int8 D_POL=1 D_TIME D_CHAN D_ANT
 
     "CUDA-defined limit on number of threads per block." #TODO: See if 2080Ti is different
     const global MAX_THREADS_PER_BLOCK = 1024
+
+    function pin_databuf_mem(db, bytes=-1)
+        if(bytes==-1) # If bytes not specified, use databuf block size (may be incorrect)
+            bytes = db.block_size
+        end
+
+        hp_databuf = unsafe_wrap(Array{Main.Hashpipe.hashpipe_databuf_t}, db.p_hpguppi_db, (1))[1];
+        println("Pinning $bytes of Memory:")
+        for i in 1:hp_databuf.n_block
+            println("Block: $i")
+            # Get correct buffer size from databuf!
+            CUDA.Mem.register(CUDA.Mem.HostBuffer,db.blocks[i].p_data , bytes)
+        end
+    end
+
 
     "Load a Guppi RAW file and return the file and header variables."
     function load_guppi(fn::String)

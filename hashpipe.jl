@@ -148,7 +148,7 @@ function display(r::Ref{hashpipe_status_t})
 end
 
 "Display hashpipe buffer"
-function display(d::hashpipe_databuf_t)
+function display(d::Main.Hashpipe.hashpipe_databuf_t)
     # Convert Ntuple to array and strip 0s before converting to string
     data_type_string = String(filter(x->x!=0x00, collect(d.data_type)))
     println("Data Type: $(data_type_string)")
@@ -225,6 +225,11 @@ function hashpipe_databuf_data(p_databuf::Ptr{hashpipe_databuf_t}, block_id::Int
     return p_data
 end
 
+"""
+    hashpipe_databuf_create(instance_id::Int, db_id::Int,
+                            header_size::Int, block_size::Int, n_block::Int)
+
+"""
 function hashpipe_databuf_create(instance_id::Int, db_id::Int,
             header_size::Int, block_size::Int, n_block::Int)
     p_databuf::Ptr{hashpipe_databuf_t} = 
