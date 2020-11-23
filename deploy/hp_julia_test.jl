@@ -1,8 +1,11 @@
 # Test file to experiment with creating hashpipe pipeline using Julia
-using Hashpipe
+include("../../jl-blio/src/Blio.jl")
+using Main.Blio.GuppiRaw
+include("./hashpipe.jl")
+using Main.Hashpipe
 
 instance_id = 0
-status = hashpipe_status_t(0,0,0,0) # Create dummy status to populate later
+status = Hashpipe.hashpipe_status_t(0,0,0,0) # Create dummy status to populate later
 r_status = Ref(status) # Need reference to status
 Hashpipe.hashpipe_status_attach(instance_id, r_status) # Populate hashpipe status with values
 Hashpipe.display(r_status)

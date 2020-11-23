@@ -1,3 +1,5 @@
+export Hashpipe
+
 """
     Hashpipe Module
 
@@ -7,8 +9,9 @@ Hashpipe C code written by Dave MacMahon: https://github.com/david-macmahon/hash
 """
 module Hashpipe
 
-include("/home/mhawkins/jl-blio/src/GuppiRaw.jl")
-using .GuppiRaw
+export hashpipe_databuf_t, hashpipe_status_t
+using ..GuppiRaw
+
 # Hashpipe error Codes
 const global HASHPIPE_OK         =  0
 const global HASHPIPE_TIMEOUT    =  1 # Call timed out 
@@ -32,17 +35,8 @@ struct hashpipe_databuf_t
 end
 
 # Status constants
-const global HASHPIPE_STATUS_TOTAL_SIZE = 184320 # 2880 * 64
-const global HASHPIPE_STATUS_RECORD_SIZE = 80
-
-# HPGUPPI_DATABUF.h constants
-const ALIGNMENT_SIZE = 4096
-const N_INPUT_BLOCKS = 24
-const BLOCK_HDR_SIZE = 5*80*512
-const BLOCK_DATA_SIZE = 128*1024*1024
-const PADDING_SIZE = ALIGNMENT_SIZE - (sizeof(hashpipe_databuf_t)%ALIGNMENT_SIZE)
-const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
-
+const global STATUS_TOTAL_SIZE = 184320 # 2880 * 64
+const global STATUS_RECORD_SIZE = 80
 
 """
 Hashpipe Status struct
@@ -53,8 +47,7 @@ Example:
 '''
     instance_id = 0
     status = hashpipe_status_t(0,0,0,0)
-    r_status = Ref(status)
-    hashpipe_status_attach(instance_id, r_status)
+    hashpipe_status_attach(instance_id, Ref(r_status))
 '''
 """
 mutable struct hashpipe_status_t
@@ -64,64 +57,7 @@ mutable struct hashpipe_status_t
     p_buf::Ptr{UInt8}
 end
 
-"""
-    hpguppi_input_block_t
 
-Used to hold the pointers to individual GuppiRaw
-header and data pointers.
-"""
-struct hpguppi_input_block_t
-    p_hdr::Ptr{UInt8}
-    p_data::Ptr{Any}
-end
-
-"""
-    hpguppi_input_databuf_t
-
-
-"""
-mutable struct hpguppi_input_databuf_t
-    p_hpguppi_db::Ptr{hashpipe_databuf_t}
-    blocks::Array{hpguppi_input_block_t}
-end
-
-function databuf_init(p_input_db::Ptr{hashpipe_databuf_t})
-    blocks_array::Array{hpguppi_input_block_t} = []
-    p_blocks = p_input_db + sizeof(hashpipe_databuf_t) + PADDING_SIZE
-    for i = 0:N_INPUT_BLOCKS - 1
-        p_header = p_blocks + i * BLOCK_SIZE
-        p_data = p_header + BLOCK_HDR_SIZE
-        push!(blocks_array, hpguppi_input_block_t(p_header, p_data))
-    end
-    return hpguppi_input_databuf_t(p_input_db, blocks_array)
-end
-
-function get_data(input_block::hpguppi_input_block_t)
-    grh = GuppiRaw.Header()
-    # TODO: Fix Int8 conversion
-    buf = reshape(unsafe_wrap(Array, input_block.p_hdr, BLOCK_HDR_SIZE), (GuppiRaw.HEADER_REC_SIZE, :))
-    endidx = findfirst(c->buf[1:4,c] == GuppiRaw.END, 1:size(buf,2))
-
-    for i in 1:endidx-1                            
-        rec = String(buf[:,i])                       
-        k, v = split(rec, '=', limit=2)              
-        k = Symbol(lowercase(strip(k)))              
-        v = strip(v)                                 
-        if v[1] == '\''                              
-            v = strip(v, [' ', '\''])                  
-        elseif !isnothing(match(r"^[+-]?[0-9]+$", v))
-            v = parse(Int, v)                          
-        elseif !isnothing(tryparse(Float64, v))      
-            v = parse(Float64, v)                      
-        end                                          
-        grh[k] = v
-    end
-    # TODO: Make custom function in GuppiRaw.jl to do this parsing from a pointer. Figure out ideal array resizing for CUDA
-    model_array = Array(grh)
-    dims = size(model_array)
-    data = unsafe_wrap(Array{eltype(model_array)}, Ptr{eltype(model_array)}(input_block.p_data), dims)
-    return grh, data
-end
 
 #----------#
 # Displays #
@@ -129,14 +65,14 @@ end
 
 "Display hashpipe status"
 function display(s::hashpipe_status_t)
-    BUFFER_MAX_RECORDS = Int(HASHPIPE_STATUS_TOTAL_SIZE / 80)
+    BUFFER_MAX_RECORDS = Int(STATUS_TOTAL_SIZE / STATUS_RECORD_SIZE)
     println("Instance ID: $(s.instance_id)")
     println("shmid: $(s.shmid)")
     lock = unsafe_wrap(Array, s.p_lock, (1))[1]
     println("Lock: $lock")
 
     println("Buffer:")    
-    string_array = unsafe_wrap(Array, s.p_buf, (HASHPIPE_STATUS_RECORD_SIZE, BUFFER_MAX_RECORDS))
+    string_array = unsafe_wrap(Array, s.p_buf, (STATUS_RECORD_SIZE, BUFFER_MAX_RECORDS))
     for record in 1:size(string_array, 2)
         record_string = String(string_array[:, record])
         println("\t", record_string)
@@ -148,13 +84,13 @@ function display(s::hashpipe_status_t)
 end
 
 "Display hashpipe status from reference"
-function display(r::Ref{hashpipe_status_t})
+function Base.display(r::Ref{hashpipe_status_t})
     display(r[])
     return nothing
 end
 
 "Display hashpipe buffer"
-function display(d::hashpipe_databuf_t)
+function Base.display(d::Hashpipe.hashpipe_databuf_t)
     # Convert Ntuple to array and strip 0s before converting to string
     data_type_string = String(filter(x->x!=0x00, collect(d.data_type)))
     println("Data Type: $(data_type_string)")
@@ -167,8 +103,8 @@ function display(d::hashpipe_databuf_t)
 end
 
 "Display hashpipe databuf from pointer"
-function display(p::Ptr{hashpipe_databuf_t})
-    databuf = unsafe_wrap(Array, p, 1)[]
+function Base.display(p::Ptr{hashpipe_databuf_t})
+    databuf::hashpipe_databuf_t = unsafe_wrap(Array, p, 1)[]
     display(databuf)
     return nothing
 end
@@ -177,8 +113,7 @@ end
 # Hashpipe Status Functions #
 #---------------------------#
 
-# TODO: wrap with error checking based on function
-# Returns 0 with error
+
 function hashpipe_status_exists(instance_id::Int)
     exists::Int8 = ccall((:hashpipe_status_exists, 
                 "libhashpipestatus.so"), 
@@ -204,14 +139,15 @@ function hashpipe_status_unlock(p_hashpipe_status::Ref{hashpipe_status_t})
     return error
 end
 
-function hashpipe_status_buf_lock_unlock(f::Function, st::Ref{hashpipe_status_t})
+function hashpipe_status_buf_lock_unlock(f::Function, r_status::Ref{hashpipe_status_t})
         try
-            hashpipe_status_lock(st)
+            hashpipe_status_lock(r_status)
             f() # or f(st) TODO: test which of these is better
-        catch
-            println("Error locking hashpipe status buffer.")
+        catch e
+            println("Error locking hashpipe status buffer - Error: $e")
+            perror(e)
         finally
-            hashpipe_status_unlock(st)
+            hashpipe_status_unlock(r_status)
         end
 end
 
@@ -330,12 +266,25 @@ end
 # Hput Functions #
 #----------------#
 
-function hputs(p_hstring::Ptr{UInt8}, p_keyword::Cstring, p_cval::Cstring )
-    error::Int = ccall((:hputs, "libhashpipestatus.so"),
+
+function update_status(status::hashpipe_status_t, key::String, value::String)::Int8
+    key = Cstring(pointer(key)) # Need to convert for hput functions
+    error::Int8 = ccall((:hputs, "libhashpipestatus.so"),
                     Int, (Ptr{UInt8}, Cstring, Cstring),
-                    p_hstring, p_keyword, p_cval)
+                    status.p_buf, Cstring(pointer(key)), Cstring(pointer(value)))
     return error
 end
+
+function update_status(status::hashpipe_status_t, key::String, value::Int)::Int8
+    key = Cstring(pointer(key)) # Need to convert for hput functions
+    error::Int8 = ccall((:hputi4, "libhashpipestatus.so"),
+                    Int, (Ptr{UInt8}, Cstring, Cint),
+                    status.p_buf, Cstring(pointer(key)), Cint(value))
+    return error
+end
+
+# hput functions...remove?
+
 # Auto-convert Julia string to Cstring
 function hputs(p_hstring::Ptr{UInt8}, p_keyword::String, p_cval::String)
     error::Int = ccall((:hputs, "libhashpipestatus.so"),
@@ -374,3 +323,79 @@ function pin_databuf_mem(db, bytes=-1)
         CUDA.Mem.register(CUDA.Mem.HostBuffer,db.blocks[i].p_data , bytes)
     end
 end
+
+export HPGuppi
+
+module HPGuppi
+
+using ..Hashpipe: hashpipe_databuf_t
+using ..GuppiRaw
+
+export hpguppi_input_block_t
+
+# HPGUPPI_DATABUF.h constants
+const ALIGNMENT_SIZE = 4096
+const N_INPUT_BLOCKS = 24
+const BLOCK_HDR_SIZE = 5*80*512
+const BLOCK_DATA_SIZE = 128*1024*1024
+const PADDING_SIZE = ALIGNMENT_SIZE - (sizeof(hashpipe_databuf_t) % ALIGNMENT_SIZE)
+const BLOCK_SIZE = BLOCK_HDR_SIZE + BLOCK_DATA_SIZE
+
+"""
+    hpguppi_input_block_t
+
+Used to hold the pointers to individual GuppiRaw
+header and data pointers.
+"""
+struct hpguppi_input_block_t
+    p_hdr::Ptr{UInt8}
+    p_data::Ptr{Any}
+end
+
+"""
+    hpguppi_input_databuf_t
+"""
+struct hpguppi_input_databuf_t
+    p_hpguppi_db::Ptr{hashpipe_databuf_t}
+    blocks::Array{hpguppi_input_block_t}
+
+    function hpguppi_input_databuf_t(p_hp_db::Ptr{hashpipe_databuf_t})
+        blocks_array = Array{hpguppi_input_block_t}(undef, N_INPUT_BLOCKS)
+        p_blocks = p_hp_db + sizeof(hashpipe_databuf_t) + PADDING_SIZE
+        for i = 0:N_INPUT_BLOCKS - 1
+            p_header = p_blocks + i * BLOCK_SIZE
+            p_data = p_header + BLOCK_HDR_SIZE
+            blocks_array[i+1] = hpguppi_input_block_t(p_header, p_data)
+        end
+        new(p_hp_db, blocks_array)
+    end
+end
+
+function get_data(input_block::hpguppi_input_block_t)
+    grh = GuppiRaw.Header()
+    # TODO: Fix Int8 conversion
+    buf = reshape(unsafe_wrap(Array, input_block.p_hdr, BLOCK_HDR_SIZE), (GuppiRaw.HEADER_REC_SIZE, :))
+    endidx = findfirst(c->buf[1:4,c] == GuppiRaw.END, 1:size(buf,2))
+
+    for i in 1:endidx-1                            
+        rec = String(buf[:,i])                       
+        k, v = split(rec, '=', limit=2)              
+        k = Symbol(lowercase(strip(k)))              
+        v = strip(v)                                 
+        if v[1] == '\''                              
+            v = strip(v, [' ', '\''])                  
+        elseif !isnothing(match(r"^[+-]?[0-9]+$", v))
+            v = parse(Int, v)                          
+        elseif !isnothing(tryparse(Float64, v))      
+            v = parse(Float64, v)                      
+        end                                          
+        grh[k] = v
+    end
+    # TODO: Make custom function in GuppiRaw.jl to do this parsing from a pointer. Figure out ideal array resizing for CUDA
+    model_array = Array(grh)
+    dims = size(model_array)
+    data = unsafe_wrap(Array{eltype(model_array)}, Ptr{eltype(model_array)}(input_block.p_data), dims)
+    return grh, data
+end
+
+end # End Module HPGuppi
