@@ -2,7 +2,7 @@ include("../../jl-blio/src/GuppiRaw.jl")
 using .GuppiRaw
 include("./hashpipe.jl")
 
-using .Hashpipe: hashpipe_status_t, HASHPIPE_OK, HASHPIPE_TIMEOUT
+using .Hashpipe: update_status, hashpipe_status_t, HASHPIPE_OK, HASHPIPE_TIMEOUT
 using .HPGuppi: hpguppi_input_databuf_t, N_INPUT_BLOCKS
 
 using ArgParse, Statistics
@@ -74,21 +74,20 @@ function main()
 	
 	# Create hashpipe status and populate it with selected instance status values
 	status = hashpipe_status_t(0,0,0,0)
-	r_status = Ref(status)
-	Hashpipe.hashpipe_status_attach(instance_id, r_status)
-	# display(status) # Uncomment to display the hashpipe instance status before starting work
+	Hashpipe.hashpipe_status_attach(instance_id, Ref(status))
+	# Hashpipe.display(status) # Uncomment to display the hashpipe instance status before starting work
 
 	# Attach to hpguppi databuf
 	hp_input_db = Hashpipe.hashpipe_databuf_attach(instance_id, hp_input_db_id)
     # Populate hpguppi_db with values of selected databuf
-    hpguppi_db = hpguppi_input_databuf_t(hp_input_db)
+    hpguppi_db = HPGuppi.hpguppi_input_databuf_t(hp_input_db)
 
 	time_per_block = 0
 
 	# Main hashpipe calculation loop that waits for filled blocks and processes them
 	while true
-		# Lock status buffer before updating key, value pairs
-		Hashpipe.hashpipe_status_buf_lock_unlock(r_status) do 
+		# Lock status buffer before updating key/value pairs
+		Hashpipe.hashpipe_status_buf_lock_unlock(Ref(status)) do 
 				Hashpipe.update_status(status, "GPUBLKIN", cur_block_in);
 				Hashpipe.update_status(status, "GPUBKOUT", cur_block_out);
 				Hashpipe.update_status(status,  "GPUSTAT", "Waiting");
@@ -106,7 +105,7 @@ function main()
 		
         tick = time_ns()
 
-		Hashpipe.hashpipe_status_buf_lock_unlock(r_status) do
+		Hashpipe.hashpipe_status_buf_lock_unlock(Ref(status)) do
 			Hashpipe.update_status(status, "GPUSTAT", "Processing");
 			Hashpipe.update_status(status, "GPUBLKMS", string(time_per_block));
 		end

@@ -10,7 +10,6 @@ Hashpipe C code written by Dave MacMahon: https://github.com/david-macmahon/hash
 module Hashpipe
 
 export hashpipe_databuf_t, hashpipe_status_t
-using ..GuppiRaw
 
 # Hashpipe error Codes
 const global HASHPIPE_OK         =  0
@@ -64,21 +63,32 @@ end
 #----------#
 
 "Display hashpipe status"
-function display(s::hashpipe_status_t)
+function Base.display(s::hashpipe_status_t)
     BUFFER_MAX_RECORDS = Int(STATUS_TOTAL_SIZE / STATUS_RECORD_SIZE)
     println("Instance ID: $(s.instance_id)")
     println("shmid: $(s.shmid)")
-    lock = unsafe_wrap(Array, s.p_lock, (1))[1]
-    println("Lock: $lock")
 
-    println("Buffer:")    
-    string_array = unsafe_wrap(Array, s.p_buf, (STATUS_RECORD_SIZE, BUFFER_MAX_RECORDS))
-    for record in 1:size(string_array, 2)
-        record_string = String(string_array[:, record])
-        println("\t", record_string)
-        if record_string[1:3] == "END"
-            return nothing
+    # Check to see if valid pointer
+    if s.p_lock != C_NULL
+        lock = unsafe_wrap(Array, s.p_lock, (1))[1]
+        println("Lock: $lock")
+    else
+        println("Lock: NULL")
+    end
+
+    # Check to see if valid pointer
+    if s.p_buf != C_NULL
+        println("Buffer:")    
+        string_array = unsafe_wrap(Array, s.p_buf, (STATUS_RECORD_SIZE, BUFFER_MAX_RECORDS))
+        for record in 1:size(string_array, 2)
+            record_string = String(string_array[:, record])
+            println("\t", record_string)
+            if record_string[1:3] == "END"
+                return nothing
+            end
         end
+    else
+        println("Buffer: NULL")
     end
     return nothing
 end
@@ -219,7 +229,7 @@ end
 
 # Return total lock status for databuf
 function hashpipe_databuf_total_status(p_databuf::Ptr{hashpipe_databuf_t})
-    total_status::Int = ccall((:hashpipe_databuf_total_status, "libhashpipe.so"),
+    total_status::UInt64 = ccall((:hashpipe_databuf_total_status, "libhashpipe.so"),
                     Int, (Ptr{hashpipe_databuf_t},), p_databuf)
     return total_status
 end
@@ -370,6 +380,25 @@ struct hpguppi_input_databuf_t
         new(p_hp_db, blocks_array)
     end
 end
+
+"""
+    find_first_full_block(db::hpguppi_input_databuf_t)::Int
+
+Return the index of the first full block in hpguppi databuf. Return 0 if none ready.
+
+NOTE: 1-indexed and in development
+"""
+function find_first_full_block(db::hpguppi_input_databuf_t)::Int
+    lock_mask = Hashpipe.hashpipe_databuf_total_mask(db.p_hpguppi_db)
+    # If no blocks ready, start at 1 (1-indexed blocks array)
+    if lock_mask == 0
+        return 1
+
+    # TODO: Create function to find first filled block to start processing at
+    # bitstring(lock_mask) 
+    return index
+end
+
 
 function get_data(input_block::hpguppi_input_block_t)
     grh = GuppiRaw.Header()
